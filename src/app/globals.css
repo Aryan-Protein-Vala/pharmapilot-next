@@ -70,7 +70,7 @@
 
   /* Dimensions & Curves */
   --rail-collapsed: 68px;
-  --rail-expanded: 256px;
+  --rail-expanded: 260px;
   --topbar-h: 56px;
   --spring: cubic-bezier(0.22, 1, 0.36, 1);
   --radius-sm: 6px;
@@ -270,12 +270,11 @@ input[type="number"],
 }
 
 .left-nav-rail.expanded,
-.left-nav-rail.pinned {
+.left-nav-rail.pinned,
+.left-nav-rail[data-expanded="true"] {
   width: var(--rail-expanded) !important;
-}
-
-.left-nav-rail.expanded:not(.pinned) {
-  box-shadow: 10px 0 32px rgba(15, 23, 42, 0.12);
+  min-width: var(--rail-expanded) !important;
+  box-shadow: var(--shadow-overlay);
 }
 
 /* Topbar */

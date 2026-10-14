@@ -9,6 +9,7 @@ import {
   Building2,
   Database,
   Wifi,
+  PanelLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -16,12 +17,16 @@ interface TopbarProps {
   storeName?: string;
   drugLicenseNo?: string;
   gstin?: string;
+  onToggleSidebar?: () => void;
+  isSidebarExpanded?: boolean;
 }
 
 export function Topbar({
   storeName = "Apex Life Chemist & Druggist",
   drugLicenseNo = "DL-20B/21B-48921",
   gstin = "07AAAAA0000A1Z5",
+  onToggleSidebar,
+  isSidebarExpanded = false,
 }: TopbarProps) {
   const [mounted, setMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState<string>("");
@@ -91,6 +96,19 @@ export function Topbar({
     <header className="app-topbar border-b border-slate-200 dark:border-navy-800 bg-white dark:bg-navy-900 px-4 h-14 flex items-center justify-between shrink-0 select-none">
       {/* Store Identity & Branch */}
       <div className="flex items-center gap-3">
+        {onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className={cn(
+              "p-1.5 rounded-lg text-slate-500 hover:text-navy-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-navy-800 transition-colors focus:outline-none shrink-0",
+              isSidebarExpanded && "text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40"
+            )}
+            title={isSidebarExpanded ? "Collapse Navigation Rail" : "Expand Navigation Rail"}
+            aria-label={isSidebarExpanded ? "Collapse Navigation Rail" : "Expand Navigation Rail"}
+          >
+            <PanelLeft className="w-5 h-5 stroke-[2]" />
+          </button>
+        )}
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
             <h1 className="text-sm font-bold text-navy-900 dark:text-slate-100 tracking-tight leading-none">

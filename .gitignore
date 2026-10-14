@@ -31,3 +31,5 @@ next-env.d.ts
 # test temporary databases
 test_*.db*
 pharmapilot_vitest.db*
+*.db-shm
+*.db-wal

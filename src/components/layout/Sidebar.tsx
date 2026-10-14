@@ -12,10 +12,11 @@ import {
   FileSpreadsheet,
   BookOpen,
   UploadCloud,
-  Settings,
   Pin,
   PinOff,
   Activity,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -94,11 +95,10 @@ export function Sidebar({ isPinned, onTogglePin, isHovered, setIsHovered }: Side
   };
 
   const handleMouseLeave = () => {
-    // 150ms gentle leave debounce to prevent erratic closing
     hoverTimeoutRef.current = setTimeout(() => {
       setIsHovered(false);
       setActiveTooltip(null);
-    }, 150);
+    }, 120);
   };
 
   useEffect(() => {
@@ -111,38 +111,42 @@ export function Sidebar({ isPinned, onTogglePin, isHovered, setIsHovered }: Side
     <aside
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      data-expanded={isExpanded ? "true" : "false"}
+      style={{
+        width: isExpanded ? "260px" : "68px",
+        minWidth: isExpanded ? "260px" : "68px",
+        maxWidth: isExpanded ? "260px" : "68px",
+      }}
       className={cn(
-        "left-nav-rail fixed top-0 left-0 bottom-0 z-40 flex flex-col bg-white dark:bg-navy-900 border-r border-slate-200 dark:border-navy-800 transition-[width,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] select-none",
-        isExpanded ? "w-[240px] shadow-lg dark:shadow-2xl" : "w-[68px]"
+        "left-nav-rail fixed top-0 left-0 bottom-0 z-50 flex flex-col bg-white dark:bg-navy-900 border-r border-slate-200 dark:border-navy-800 transition-[width,min-width,max-width,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] select-none",
+        isExpanded ? "expanded shadow-2xl" : "collapsed shadow-none",
+        isPinned && "pinned"
       )}
       aria-label="Sidebar Navigation"
     >
       {/* Brand Header */}
-      <div className="h-14 flex items-center justify-between px-3.5 border-b border-slate-100 dark:border-navy-800 shrink-0">
-        <Link href="/" className="flex items-center gap-3 overflow-hidden">
-          <div className="w-9 h-9 min-w-[36px] rounded-lg bg-teal-600 flex items-center justify-center text-white font-bold shadow-sm">
+      <div className="h-14 flex items-center justify-between px-3.5 border-b border-slate-100 dark:border-navy-800 shrink-0 overflow-hidden">
+        <Link href="/" className="flex items-center gap-3 overflow-hidden min-w-0">
+          <div className="w-9 h-9 min-w-[36px] rounded-lg bg-teal-600 flex items-center justify-center text-white font-bold shadow-sm shrink-0">
             <Activity className="w-5 h-5 stroke-[2.25]" />
           </div>
-          <div
-            className={cn(
-              "flex flex-col transition-opacity duration-200 whitespace-nowrap overflow-hidden",
-              isExpanded ? "opacity-100" : "opacity-0 w-0"
-            )}
-          >
-            <span className="font-semibold text-sm tracking-tight text-navy-900 dark:text-slate-100 leading-none">
-              PharmaPilot
-            </span>
-            <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 tracking-wider uppercase mt-1">
-              Enterprise ERP
-            </span>
-          </div>
+          {isExpanded && (
+            <div className="flex flex-col whitespace-nowrap overflow-hidden min-w-0 animate-in fade-in duration-150">
+              <span className="font-semibold text-sm tracking-tight text-navy-900 dark:text-slate-100 leading-none truncate">
+                PharmaPilot
+              </span>
+              <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 tracking-wider uppercase mt-1 truncate">
+                Enterprise ERP
+              </span>
+            </div>
+          )}
         </Link>
 
         {isExpanded && (
           <button
             onClick={onTogglePin}
             className={cn(
-              "p-1.5 rounded-md transition-colors text-slate-400 hover:text-navy-900 dark:hover:text-slate-100",
+              "p-1.5 rounded-md transition-colors text-slate-400 hover:text-navy-900 dark:hover:text-slate-100 shrink-0",
               isPinned
                 ? "bg-teal-50 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300"
                 : "hover:bg-slate-100 dark:hover:bg-navy-800"
@@ -168,14 +172,14 @@ export function Sidebar({ isPinned, onTogglePin, isHovered, setIsHovered }: Side
           return (
             <div
               key={item.href}
-              className="relative group"
+              className="relative group w-full"
               onMouseEnter={() => !isExpanded && setActiveTooltip(item.name)}
               onMouseLeave={() => setActiveTooltip(null)}
             >
               <Link
                 href={item.href}
                 className={cn(
-                  "relative flex items-center h-10 px-3 rounded-lg text-xs font-medium transition-colors gap-3 overflow-hidden",
+                  "relative flex items-center h-10 px-3 rounded-lg text-xs font-medium transition-colors gap-3 overflow-hidden w-full",
                   isActive
                     ? "bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 font-semibold"
                     : "text-slate-600 dark:text-slate-400 hover:text-navy-900 dark:hover:text-slate-100 hover:bg-slate-100/80 dark:hover:bg-navy-800/60"
@@ -189,7 +193,7 @@ export function Sidebar({ isPinned, onTogglePin, isHovered, setIsHovered }: Side
                 {/* Vector Line Icon */}
                 <span
                   className={cn(
-                    "w-5 h-5 min-w-[20px] flex items-center justify-center transition-colors",
+                    "w-5 h-5 min-w-[20px] flex items-center justify-center transition-colors shrink-0",
                     isActive ? "text-teal-600 dark:text-teal-400" : "text-slate-500 dark:text-slate-400 group-hover:text-navy-900 dark:group-hover:text-slate-200"
                   )}
                 >
@@ -197,20 +201,17 @@ export function Sidebar({ isPinned, onTogglePin, isHovered, setIsHovered }: Side
                 </span>
 
                 {/* Nav Label */}
-                <span
-                  className={cn(
-                    "whitespace-nowrap transition-opacity duration-150 flex-1",
-                    isExpanded ? "opacity-100" : "opacity-0 invisible w-0"
-                  )}
-                >
-                  {item.name}
-                </span>
+                {isExpanded && (
+                  <span className="whitespace-nowrap transition-opacity duration-150 flex-1 truncate text-xs font-medium">
+                    {item.name}
+                  </span>
+                )}
 
                 {/* Counter / Status Badge */}
                 {item.badge !== undefined && isExpanded && (
                   <span
                     className={cn(
-                      "text-[10px] font-bold px-1.5 py-0.5 rounded tabular-nums",
+                      "text-[10px] font-bold px-1.5 py-0.5 rounded tabular-nums shrink-0 ml-auto",
                       item.badgeVariant === "alert"
                         ? "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"
                         : item.badgeVariant === "teal"
@@ -242,25 +243,46 @@ export function Sidebar({ isPinned, onTogglePin, isHovered, setIsHovered }: Side
         })}
       </nav>
 
-      {/* Rail Footer */}
-      <div className="p-3 border-t border-slate-100 dark:border-navy-800 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 min-w-[32px] rounded-full bg-slate-100 dark:bg-navy-800 border border-slate-200 dark:border-navy-700 flex items-center justify-center text-xs font-semibold text-navy-800 dark:text-slate-200">
+      {/* Rail Footer with Quick Expand/Collapse Button */}
+      <div className="p-2 border-t border-slate-100 dark:border-navy-800 shrink-0 flex flex-col gap-1.5 overflow-hidden">
+        <button
+          onClick={onTogglePin}
+          className={cn(
+            "flex items-center h-8 px-2.5 rounded-lg text-xs font-medium transition-colors gap-3 w-full",
+            isPinned
+              ? "bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300"
+              : "text-slate-500 hover:bg-slate-100 dark:hover:bg-navy-800 hover:text-navy-900 dark:hover:text-slate-200"
+          )}
+          title={isPinned ? "Click to unpin sidebar" : "Click to pin/lock sidebar open"}
+        >
+          <span className="w-5 h-5 min-w-[20px] flex items-center justify-center shrink-0 text-slate-400">
+            {isExpanded ? (
+              <ChevronLeft className="w-4 h-4 stroke-[2]" />
+            ) : (
+              <ChevronRight className="w-4 h-4 stroke-[2]" />
+            )}
+          </span>
+          {isExpanded && (
+            <span className="truncate text-[11px] font-medium">
+              {isPinned ? "Collapse Sidebar" : "Pin Sidebar Open"}
+            </span>
+          )}
+        </button>
+
+        <div className="flex items-center gap-2.5 px-1 py-1">
+          <div className="w-7 h-7 min-w-[28px] rounded-full bg-slate-100 dark:bg-navy-800 border border-slate-200 dark:border-navy-700 flex items-center justify-center text-[11px] font-semibold text-navy-800 dark:text-slate-200 shrink-0">
             RP
           </div>
-          <div
-            className={cn(
-              "flex flex-col transition-opacity duration-150 overflow-hidden whitespace-nowrap",
-              isExpanded ? "opacity-100" : "opacity-0 w-0"
-            )}
-          >
-            <span className="text-xs font-medium text-navy-900 dark:text-slate-200 truncate">
-              Reg. Pharmacist
-            </span>
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-              Lic: 20B/21B Active
-            </span>
-          </div>
+          {isExpanded && (
+            <div className="flex flex-col overflow-hidden whitespace-nowrap min-w-0">
+              <span className="text-xs font-medium text-navy-900 dark:text-slate-200 truncate leading-none">
+                Reg. Pharmacist
+              </span>
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono mt-0.5">
+                Lic: 20B/21B Active
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </aside>

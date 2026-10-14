@@ -36,7 +36,7 @@ export function AppShell({ children }: AppShellProps) {
       <div
         className={cn(
           "app-shell min-h-screen w-full bg-slate-50 dark:bg-navy-900 transition-[padding-left] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
-          mounted && isPinned ? "pl-[240px]" : "pl-[68px]"
+          mounted && isPinned ? "rail-pinned !pl-[260px]" : "!pl-[68px]"
         )}
       >
         {/* Left-Side Navigation Rail */}
@@ -49,7 +49,10 @@ export function AppShell({ children }: AppShellProps) {
 
         {/* Workspace Canvas (Topbar + Main Viewport) */}
         <div className="page-workspace flex flex-col min-h-screen min-w-0">
-          <Topbar />
+          <Topbar
+            onToggleSidebar={handleTogglePin}
+            isSidebarExpanded={isPinned || isHovered}
+          />
           <main className="flex-1 p-5 md:p-6 overflow-y-auto">
             {children}
           </main>
