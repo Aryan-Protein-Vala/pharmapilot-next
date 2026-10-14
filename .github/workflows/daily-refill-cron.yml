@@ -1,0 +1,43 @@
+name: Daily Refill Alert Cron
+
+on:
+  schedule:
+    # Runs daily at 04:00 UTC (09:30 AM IST) - Free background automation
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target Deployment URL (defaults to VERCEL_PROJECT_URL secret or prod URL)'
+        required: false
+        default: 'https://pharmapilot.vercel.app'
+
+jobs:
+  ping-refills-cron:
+    name: Ping Chronic Refills Endpoint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Refill Cron API
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: ${{ inputs.target_url || secrets.VERCEL_PROJECT_URL || 'https://pharmapilot.vercel.app' }}
+        run: |
+          echo "Triggering chronic refill alert scan on: ${BASE_URL}/api/cron/refills"
+          
+          # Ping the API route with Bearer token authentication
+          HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${BASE_URL}/api/cron/refills" \
+            -H "Authorization: Bearer ${CRON_SECRET:-dev_secret}" \
+            -H "Content-Type: application/json")
+          
+          BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
+          STATUS_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
+          
+          echo "HTTP Status Code: $STATUS_CODE"
+          echo "Response Body:"
+          echo "$BODY"
+          
+          if [ "$STATUS_CODE" -ne 200 ]; then
+            echo "::error::Cron execution failed with status $STATUS_CODE"
+            exit 1
+          fi
+          
+          echo "Refill cron executed successfully!"

@@ -1,0 +1,582 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+   PHARMAPILOT NEXT — MEDICAL MINIMALIST ENTERPRISE DESIGN SYSTEM
+   Palette: Executive Navy (#0F172A, #1E293B), Clinical Teal (#0D9488, #14B8A6),
+   Off-White Canvas (#F8FAFC, #FFFFFF), Crisp Subtle Borders (#E2E8F0).
+   Zero Emojis, Clean Vector Line SVGs, Tabular Numerals.
+   ============================================================================ */
+
+:root,
+[data-theme="light"],
+.light {
+  /* Canvas & Surfaces */
+  --bg-canvas: #F8FAFC;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #F1F5F9;
+  --bg-muted: #E2E8F0;
+  --bg-hover: #F8FAFC;
+  --bg-active: #F1F5F9;
+
+  /* Borders */
+  --border-subtle: #E2E8F0;
+  --border-strong: #CBD5E1;
+  --border-focus: #0D9488;
+
+  /* Typography */
+  --text-primary: #0F172A;     /* Executive Navy Deep */
+  --text-secondary: #475569;   /* Executive Navy Mid */
+  --text-muted: #64748B;       /* Slate Slate Muted */
+  --text-disabled: #94A3B8;
+
+  /* Executive Navy Tokens */
+  --navy-900: #0F172A;
+  --navy-800: #1E293B;
+  --navy-700: #334155;
+  --navy-600: #475569;
+  --navy-500: #64748B;
+
+  /* Clinical Teal Tokens */
+  --teal-primary: #0D9488;     /* Clinical Teal 600 */
+  --teal-hover: #0F766E;       /* Clinical Teal 700 */
+  --teal-light: #14B8A6;       /* Clinical Teal 500 */
+  --teal-subtle: #2DD4BF;      /* Clinical Teal 400 */
+  --teal-soft: #F0FDFA;        /* Clinical Teal 50 */
+  --teal-soft-border: #CCFBF1; /* Clinical Teal 100 */
+  --teal-text: #0F766E;        /* High Contrast Teal */
+
+  /* Semantic Alerts */
+  --alert-amber: #D97706;
+  --alert-amber-bg: #FEF3C7;
+  --alert-amber-text: #92400E;
+  --alert-amber-border: #FDE68A;
+
+  --alert-red: #DC2626;
+  --alert-red-bg: #FEE2E2;
+  --alert-red-text: #991B1B;
+  --alert-red-border: #FECACA;
+
+  --alert-green: #059669;
+  --alert-green-bg: #ECFDF5;
+  --alert-green-text: #065F46;
+  --alert-green-border: #A7F3D0;
+
+  --alert-blue: #2563EB;
+  --alert-blue-bg: #EFF6FF;
+  --alert-blue-text: #1E40AF;
+  --alert-blue-border: #BFDBFE;
+
+  /* Dimensions & Curves */
+  --rail-collapsed: 68px;
+  --rail-expanded: 256px;
+  --topbar-h: 56px;
+  --spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Shadows */
+  --shadow-soft: 0 1px 3px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
+  --shadow-card: 0 4px 6px -1px rgba(15, 23, 42, 0.04), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
+  --shadow-overlay: 10px 0 28px rgba(15, 23, 42, 0.09);
+  --shadow-modal: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.08);
+}
+
+[data-theme="dark"],
+.dark {
+  /* Dark Canvas & Surfaces */
+  --bg-canvas: #0B0F19;
+  --bg-surface: #0F172A;       /* Executive Navy base */
+  --bg-elevated: #1E293B;      /* Executive Navy elevated */
+  --bg-muted: #334155;
+  --bg-hover: #1E293B;
+  --bg-active: #243248;
+
+  /* Borders */
+  --border-subtle: #1E293B;
+  --border-strong: #334155;
+  --border-focus: #14B8A6;
+
+  /* Typography */
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --text-disabled: #475569;
+
+  /* Clinical Teal Dark */
+  --teal-primary: #14B8A6;
+  --teal-hover: #2DD4BF;
+  --teal-light: #2DD4BF;
+  --teal-subtle: #5EEAD4;
+  --teal-soft: rgba(20, 184, 166, 0.12);
+  --teal-soft-border: rgba(20, 184, 166, 0.28);
+  --teal-text: #5EEAD4;
+
+  /* Semantic Alerts Dark */
+  --alert-amber: #F59E0B;
+  --alert-amber-bg: rgba(245, 158, 11, 0.15);
+  --alert-amber-text: #FCD34D;
+  --alert-amber-border: rgba(245, 158, 11, 0.35);
+
+  --alert-red: #EF4444;
+  --alert-red-bg: rgba(239, 68, 68, 0.15);
+  --alert-red-text: #FCA5A5;
+  --alert-red-border: rgba(239, 68, 68, 0.35);
+
+  --alert-green: #10B981;
+  --alert-green-bg: rgba(16, 185, 129, 0.15);
+  --alert-green-text: #6EE7B7;
+  --alert-green-border: rgba(16, 185, 129, 0.35);
+
+  --alert-blue: #3B82F6;
+  --alert-blue-bg: rgba(59, 130, 246, 0.15);
+  --alert-blue-text: #93C5FD;
+  --alert-blue-border: rgba(59, 130, 246, 0.35);
+
+  /* Shadows Dark */
+  --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.45);
+  --shadow-overlay: 10px 0 32px rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================================
+   TABULAR NUMBERS & FINANCIAL ACCURACY
+   ============================================================================ */
+.tabular,
+.num,
+.money,
+table td.r,
+table th.r,
+input[type="number"],
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ============================================================================
+   CUSTOM SCROLLBARS (Clean, minimal, enterprise)
+   ============================================================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--teal-primary);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* ============================================================================
+   CORE SHELL LAYOUT STYLING
+   Left-Side Auto-folding Navigation Rail (68px idle -> 240px hover/pin)
+   ============================================================================ */
+.app-shell {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background-color: var(--bg-canvas);
+  position: relative;
+}
+
+/* Idle collapsed left rail padding on main workspace when pinned */
+.app-shell.rail-pinned {
+  padding-left: var(--rail-expanded);
+}
+
+.app-shell:not(.rail-pinned) {
+  padding-left: var(--rail-collapsed);
+}
+
+.page-workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Left Navigation Rail Container */
+.left-nav-rail {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--rail-collapsed);
+  background-color: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  transition: width 220ms var(--spring), box-shadow 220ms var(--spring);
+  overflow: hidden;
+  user-select: none;
+}
+
+.left-nav-rail.expanded,
+.left-nav-rail.pinned {
+  width: var(--rail-expanded) !important;
+}
+
+.left-nav-rail.expanded:not(.pinned) {
+  box-shadow: 10px 0 32px rgba(15, 23, 42, 0.12);
+}
+
+/* Topbar */
+.app-topbar {
+  height: var(--topbar-h);
+  background-color: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  flex-shrink: 0;
+  z-index: 30;
+}
+
+/* Toast Container */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast-container > * {
+  pointer-events: auto;
+}
+
+/* ============================================================================
+   COMPLETE @MEDIA PRINT STYLING
+   For 80mm ESC/POS Thermal Receipt and A4 GST Tax Invoice
+   ============================================================================ */
+@media print {
+  /* Completely hide all interactive chrome and shell elements */
+  .no-print,
+  .app-topbar,
+  .left-nav-rail,
+  .toast-container,
+  button:not(.allow-print),
+  .tooltip,
+  .pin-btn,
+  header,
+  nav {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #FFFFFF !important;
+    color: #000000 !important;
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    font-size: 12px;
+  }
+
+  .app-shell {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    height: auto !important;
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .page-workspace {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    height: auto !important;
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  /* --------------------------------------------------------------------------
+     1. 80mm ESC/POS Thermal Receipt Print Profile
+     Standard 80mm paper width (Printable zone ~72mm / 280-300px)
+     High contrast black, compact tabular alignment, dashed dividing rules
+     -------------------------------------------------------------------------- */
+  @page thermal-receipt {
+    size: 80mm auto;
+    margin: 2mm 3mm;
+  }
+
+  .print-receipt-80mm {
+    page: thermal-receipt;
+    width: 76mm !important;
+    max-width: 76mm !important;
+    margin: 0 auto !important;
+    padding: 2mm !important;
+    background: #FFFFFF !important;
+    color: #000000 !important;
+    font-family: ui-monospace, "SF Mono", Monaco, Consolas, "Courier New", monospace !important;
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .print-receipt-80mm h1,
+  .print-receipt-80mm h2 {
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    text-align: center !important;
+    margin: 0 0 2px 0 !important;
+    text-transform: uppercase !important;
+  }
+
+  .print-receipt-80mm .receipt-header {
+    text-align: center !important;
+    border-bottom: 1px dashed #000000 !important;
+    padding-bottom: 6px !important;
+    margin-bottom: 6px !important;
+  }
+
+  .print-receipt-80mm .receipt-meta {
+    font-size: 10px !important;
+    margin-bottom: 6px !important;
+    border-bottom: 1px dashed #000000 !important;
+    padding-bottom: 6px !important;
+  }
+
+  .print-receipt-80mm table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin: 4px 0 !important;
+    font-size: 10.5px !important;
+  }
+
+  .print-receipt-80mm table th {
+    border-bottom: 1px solid #000000 !important;
+    padding: 3px 0 !important;
+    font-weight: 700 !important;
+    text-align: left !important;
+  }
+
+  .print-receipt-80mm table td {
+    padding: 3px 0 !important;
+    vertical-align: top !important;
+  }
+
+  .print-receipt-80mm .receipt-divider {
+    border-top: 1px dashed #000000 !important;
+    margin: 5px 0 !important;
+  }
+
+  .print-receipt-80mm .receipt-double-divider {
+    border-top: 2px solid #000000 !important;
+    margin: 5px 0 !important;
+  }
+
+  .print-receipt-80mm .receipt-totals {
+    border-top: 1px dashed #000000 !important;
+    padding-top: 5px !important;
+    font-size: 11px !important;
+  }
+
+  .print-receipt-80mm .receipt-grand-total {
+    font-size: 14px !important;
+    font-weight: 800 !important;
+    border-top: 1px solid #000000 !important;
+    border-bottom: 1px solid #000000 !important;
+    padding: 4px 0 !important;
+    margin: 4px 0 !important;
+  }
+
+  .print-receipt-80mm .receipt-footer {
+    text-align: center !important;
+    font-size: 9.5px !important;
+    margin-top: 8px !important;
+    border-top: 1px dashed #000000 !important;
+    padding-top: 6px !important;
+  }
+
+  /* --------------------------------------------------------------------------
+     2. A4 GST Tax Invoice Print Profile
+     Standard 210mm x 297mm sheet portrait format
+     Full pharmaceutical legal compliance (Form 20B/21B, HSN breakdown,
+     Batch, Expiry, CGST/SGST/IGST, Reg. Pharmacist signature)
+     -------------------------------------------------------------------------- */
+  @page a4-invoice {
+    size: A4 portrait;
+    margin: 12mm 15mm;
+  }
+
+  .print-invoice-a4 {
+    page: a4-invoice;
+    width: 100% !important;
+    max-width: 190mm !important;
+    margin: 0 auto !important;
+    background: #FFFFFF !important;
+    color: #000000 !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    font-size: 11.5px !important;
+    line-height: 1.4 !important;
+    border: 1px solid #000000 !important;
+    padding: 14px !important;
+    box-sizing: border-box !important;
+  }
+
+  .print-invoice-a4 .invoice-title {
+    text-align: center !important;
+    font-size: 16px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.05em !important;
+    text-transform: uppercase !important;
+    margin-bottom: 4px !important;
+  }
+
+  .print-invoice-a4 .pharmacy-header {
+    text-align: center !important;
+    border-bottom: 2px solid #000000 !important;
+    padding-bottom: 10px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .print-invoice-a4 .pharmacy-name {
+    font-size: 20px !important;
+    font-weight: 800 !important;
+    margin: 0 0 4px 0 !important;
+    color: #000000 !important;
+  }
+
+  .print-invoice-a4 .meta-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 12px !important;
+    border-bottom: 1px solid #000000 !important;
+    padding-bottom: 10px !important;
+    margin-bottom: 10px !important;
+    font-size: 11px !important;
+  }
+
+  .print-invoice-a4 table.invoice-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-bottom: 12px !important;
+  }
+
+  .print-invoice-a4 table.invoice-table th {
+    border-top: 1px solid #000000 !important;
+    border-bottom: 1px solid #000000 !important;
+    background: #F8FAFC !important;
+    font-weight: 700 !important;
+    padding: 6px 4px !important;
+    font-size: 10.5px !important;
+    text-transform: uppercase !important;
+  }
+
+  .print-invoice-a4 table.invoice-table td {
+    padding: 5px 4px !important;
+    border-bottom: 1px solid #E2E8F0 !important;
+    font-size: 11px !important;
+  }
+
+  .print-invoice-a4 .tax-summary-box {
+    border: 1px solid #000000 !important;
+    padding: 8px !important;
+    margin-top: 10px !important;
+    font-size: 10.5px !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .print-invoice-a4 .signature-block {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: flex-end !important;
+    margin-top: 32px !important;
+    padding-top: 8px !important;
+    font-size: 11px !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .print-invoice-a4 .signature-line {
+    border-top: 1px solid #000000 !important;
+    width: 220px !important;
+    text-align: center !important;
+    padding-top: 4px !important;
+  }
+
+  /* Utility alignments for print */
+  .print-text-right {
+    text-align: right !important;
+  }
+
+  .print-text-center {
+    text-align: center !important;
+  }
+
+  .print-text-left {
+    text-align: left !important;
+  }
+
+  .print-bold {
+    font-weight: 700 !important;
+  }
+}
