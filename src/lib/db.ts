@@ -504,6 +504,37 @@ CREATE TABLE IF NOT EXISTS import_jobs (
     user_id TEXT
 );
 
+CREATE TABLE IF NOT EXISTS shortbook (
+    id TEXT PRIMARY KEY,
+    item_id TEXT REFERENCES items(id),
+    custom_item_name TEXT NOT NULL DEFAULT '',
+    distributor_id TEXT REFERENCES parties(id),
+    requested_qty INTEGER NOT NULL DEFAULT 10,
+    priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'urgent')),
+    notes TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'ordered', 'received', 'cancelled')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shortbook_status ON shortbook(status);
+
+CREATE TABLE IF NOT EXISTS cash_closings (
+    id TEXT PRIMARY KEY,
+    closing_date TEXT NOT NULL UNIQUE,
+    closing_time TEXT NOT NULL,
+    cash_system_paise INTEGER NOT NULL DEFAULT 0,
+    cash_physical_paise INTEGER NOT NULL DEFAULT 0,
+    cash_discrepancy_paise INTEGER NOT NULL DEFAULT 0,
+    upi_system_paise INTEGER NOT NULL DEFAULT 0,
+    card_system_paise INTEGER NOT NULL DEFAULT 0,
+    credit_system_paise INTEGER NOT NULL DEFAULT 0,
+    total_sales_paise INTEGER NOT NULL DEFAULT 0,
+    notes TEXT NOT NULL DEFAULT '',
+    closed_by TEXT REFERENCES users(id),
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cash_closings_date ON cash_closings(closing_date);
+
 CREATE TABLE IF NOT EXISTS number_series (
     doc_type TEXT NOT NULL,
     fy TEXT NOT NULL,

@@ -21,11 +21,13 @@ import {
   FileText,
   AlertCircle,
   Layers,
+  RotateCcw,
 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 import { formatINR, paiseToRupeesStr, rupeesToPaise } from "@/lib/money";
 import { daysUntilExpiry, isBatchExpired } from "@/lib/dates";
 import { generateQrSvg, buildUpiUri } from "@/lib/qr";
+import { SalesReturnModal } from "@/components/pos/SalesReturnModal";
 
 interface CatalogItem {
   id: string;
@@ -73,6 +75,10 @@ export default function PosBillingPage() {
 
   // Catalog and reference state
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [itemCache, setItemCache] = useState<Record<string, CatalogItem>>({});
+  const [searchResults, setSearchResults] = useState<CatalogItem[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [highlightedSearchIndex, setHighlightedSearchIndex] = useState(0);
   const [customers, setCustomers] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
   const [shop, setShop] = useState<any>({});
@@ -96,6 +102,7 @@ export default function PosBillingPage() {
   const [showBatchModalForLineIdx, setShowBatchModalForLineIdx] = useState<number | null>(null);
   const [substituteItem, setSubstituteItem] = useState<CatalogItem | null>(null);
   const [showRecallModal, setShowRecallModal] = useState(false);
+  const [showReturnModal, setShowReturnModal] = useState(false);
   const [compliancePromptOpen, setCompliancePromptOpen] = useState(false);
   const [printModalData, setPrintModalData] = useState<any | null>(null);
   const [printFormat, setPrintFormat] = useState<"a4" | "80mm" | "58mm">("80mm");
@@ -104,19 +111,31 @@ export default function PosBillingPage() {
   const barcodeBufferRef = useRef<string>("");
   const lastKeyTimeRef = useRef<number>(0);
 
-  // 1. Fetch POS catalog data
+  // Helper to resolve an item from memory cache or active results
+  const getItem = (id: string): CatalogItem | undefined => {
+    return itemCache[id] || searchResults.find((i) => i.id === id) || catalog.find((i) => i.id === id);
+  };
+
+  // 1. Fetch initial POS reference data and top items
   const loadCatalog = async () => {
     try {
       setLoading(true);
       const res = await fetch("/api/pos");
       if (res.ok) {
         const data = await res.json();
-        setCatalog(data.catalog || []);
+        const initialItems: CatalogItem[] = data.catalog || [];
+        setCatalog(initialItems);
+        setSearchResults(initialItems);
+        const cache: Record<string, CatalogItem> = {};
+        for (const item of initialItems) {
+          cache[item.id] = item;
+        }
+        setItemCache(cache);
         setCustomers(data.customers || []);
         setDoctors(data.doctors || []);
         setShop(data.shop || {});
-        if (data.catalog && data.catalog.length > 0 && !selectedCatalogItem) {
-          setSelectedCatalogItem(data.catalog[0]);
+        if (initialItems.length > 0 && !selectedCatalogItem) {
+          setSelectedCatalogItem(initialItems[0]);
         }
       }
     } catch (err) {
@@ -130,10 +149,42 @@ export default function PosBillingPage() {
     loadCatalog();
   }, []);
 
-  // 2. Hardware Barcode Scanner Wedge Listener (<35ms keystroke interval)
+  // 2. High-Scale Server-Side Debounced Search (150ms) for 3 Lakh Medicines
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if user is inside textarea or modal input unless it's pure high-speed barcode stream
+    const timer = setTimeout(async () => {
+      const cleanTerm = searchQuery.replace(/^\d+\s*\*\s*/, "").trim();
+      try {
+        setIsSearching(true);
+        const res = await fetch(`/api/pos/search?q=${encodeURIComponent(cleanTerm)}&limit=25`);
+        if (res.ok) {
+          const data = await res.json();
+          const items: CatalogItem[] = data.results || [];
+          setSearchResults(items);
+          setItemCache((prev) => {
+            const next = { ...prev };
+            for (const itm of items) {
+              next[itm.id] = itm;
+            }
+            return next;
+          });
+          setHighlightedSearchIndex(0);
+          if (items.length > 0 && !selectedCatalogItem) {
+            setSelectedCatalogItem(items[0]);
+          }
+        }
+      } catch (err) {
+        console.error("Debounced POS search failed:", err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // 3. Hardware Barcode Scanner Wedge Listener (<35ms keystroke interval)
+  useEffect(() => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
       const now = Date.now();
       const gap = now - lastKeyTimeRef.current;
       lastKeyTimeRef.current = now;
@@ -141,11 +192,28 @@ export default function PosBillingPage() {
       if (e.key === "Enter") {
         const buffered = barcodeBufferRef.current.trim();
         if (buffered.length >= 3) {
-          // Barcode scanner terminated with Enter
-          const matchedItem = catalog.find(
+          // Check local cache first
+          let matchedItem = Object.values(itemCache).find(
             (i) => i.barcode.toLowerCase() === buffered.toLowerCase() ||
                    i.batches.some((b) => b.batchNo.toLowerCase() === buffered.toLowerCase())
           );
+
+          // If not in cache, query server-side FTS search immediately
+          if (!matchedItem) {
+            try {
+              const res = await fetch(`/api/pos/search?q=${encodeURIComponent(buffered)}&limit=1`);
+              if (res.ok) {
+                const data = await res.json();
+                if (data.results && data.results.length > 0) {
+                  matchedItem = data.results[0];
+                  setItemCache((prev) => ({ ...prev, [matchedItem!.id]: matchedItem! }));
+                }
+              }
+            } catch (err) {
+              console.error("Barcode lookup failed:", err);
+            }
+          }
+
           if (matchedItem) {
             addItemWithFEFO(matchedItem.id, 1, "pack");
             success("Barcode Scanned", `${matchedItem.name} added to cart via scanner.`);
@@ -157,10 +225,8 @@ export default function PosBillingPage() {
         barcodeBufferRef.current = "";
       } else if (e.key.length === 1) {
         if (gap < 40) {
-          // Rapid keystroke (<40ms) indicative of hardware barcode wedge
           barcodeBufferRef.current += e.key;
         } else {
-          // Slow typing: reset buffer to current character
           barcodeBufferRef.current = e.key;
         }
       }
@@ -168,23 +234,11 @@ export default function PosBillingPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [catalog]);
-
-  // Alphanumeric FTS search filter supporting prefix qty (e.g. 2*dolo)
-  const cleanSearchTerm = searchQuery.replace(/^\d+\s*\*\s*/, "").trim().toLowerCase();
-  const searchResults = cleanSearchTerm
-    ? catalog.filter(
-        (i) =>
-          i.name.toLowerCase().includes(cleanSearchTerm) ||
-          i.genericName.toLowerCase().includes(cleanSearchTerm) ||
-          i.barcode.toLowerCase().includes(cleanSearchTerm) ||
-          i.batches.some((b) => b.batchNo.toLowerCase().includes(cleanSearchTerm))
-      )
-    : catalog.slice(0, 10);
+  }, [itemCache]);
 
   // Multi-batch FEFO auto-split logic
   const addItemWithFEFO = (itemId: string, requestedUnits = 1, unitMode: "pack" | "loose" = "pack") => {
-    const item = catalog.find((i) => i.id === itemId);
+    const item = getItem(itemId);
     if (!item) return;
 
     const multiplier = unitMode === "pack" ? item.packSize : 1;
@@ -233,38 +287,43 @@ export default function PosBillingPage() {
   };
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (searchResults.length > 0) {
+        setHighlightedSearchIndex((prev) => (prev + 1) % searchResults.length);
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (searchResults.length > 0) {
+        setHighlightedSearchIndex((prev) => (prev - 1 + searchResults.length) % searchResults.length);
+      }
+    } else if (e.key === "Enter") {
       e.preventDefault();
       const raw = searchQuery.trim();
-      if (!raw) return;
+      if (!raw && searchResults.length === 0) return;
 
       let qty = 1;
-      let term = raw;
       const match = raw.match(/^(\d+)\s*\*\s*(.+)$/);
       if (match) {
         qty = Math.max(1, parseInt(match[1], 10) || 1);
-        term = match[2].trim();
       }
 
-      const found = catalog.find(
-        (i) =>
-          i.name.toLowerCase().includes(term.toLowerCase()) ||
-          i.genericName.toLowerCase().includes(term.toLowerCase()) ||
-          i.barcode.toLowerCase() === term.toLowerCase()
-      );
-
-      if (found) {
-        addItemWithFEFO(found.id, qty, "pack");
+      const itemToSelect = searchResults[highlightedSearchIndex] || searchResults[0];
+      if (itemToSelect) {
+        addItemWithFEFO(itemToSelect.id, qty, "pack");
+        setSelectedCatalogItem(itemToSelect);
       } else {
-        warning("Not Found", `No matching medicine found for "${term}"`);
+        warning("Not Found", `No matching medicine found for "${raw}"`);
       }
+    } else if (e.key === "Escape") {
+      setSearchQuery("");
     }
   };
 
   // Cart calculations
   let hasRestrictedSchedule = false;
   const computedLines = cartLines.map((line, idx) => {
-    const item = catalog.find((i) => i.id === line.itemId);
+    const item = getItem(line.itemId);
     const batch = item?.batches.find((b) => b.id === line.batchId);
     const packSize = item?.packSize || 1;
     const qtyBase = line.unitMode === "pack" ? line.qty * packSize : line.qty;
@@ -493,8 +552,17 @@ export default function PosBillingPage() {
           </select>
         </div>
 
-        {/* Counter Utilities: Hold / Recall */}
+        {/* Counter Utilities: Hold / Recall / Sales Return */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowReturnModal(true)}
+            title="Customer Sales Return & Credit Note (Grahak Wapsi)"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/50 shadow-sm transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 stroke-[2.5]" />
+            <span>Sales Return (Grahak Wapsi)</span>
+          </button>
+
           <button
             onClick={holdBill}
             title="Hold current bill"
@@ -1232,6 +1300,17 @@ export default function PosBillingPage() {
           </div>
         </div>
       )}
+
+      {/* Customer Sales Return & Credit Note Drawer/Modal */}
+      <SalesReturnModal
+        isOpen={showReturnModal}
+        onClose={() => setShowReturnModal(false)}
+        customers={customers}
+        shop={shop}
+        onReturnSuccess={(res) => {
+          loadCatalog();
+        }}
+      />
     </div>
   );
 }
