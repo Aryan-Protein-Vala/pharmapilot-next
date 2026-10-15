@@ -3,9 +3,11 @@ import { getDb, initDatabase, closeDb } from '../lib/db';
 import fs from 'node:fs';
 import readline from 'node:readline';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 
 interface IngestionOptions {
   filePath?: string;
+  url?: string;
   limit?: number;
   chunkSize: number;
   generateDemoCount?: number;
@@ -269,9 +271,22 @@ export async function runIngestion(options: IngestionOptions) {
     }
 
     await flushBuffer();
-  } else if (options.filePath) {
-    const fileStream = fs.createReadStream(options.filePath, { encoding: 'utf-8' });
-    const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+  } else if (options.url || options.filePath) {
+    let inputStream: any;
+    if (options.url) {
+      console.log(`\n[3/4] Streaming Indian Medicine Catalog directly from remote URL:`);
+      console.log(`      ${options.url}`);
+      const res = await fetch(options.url);
+      if (!res.ok || !res.body) {
+        throw new Error(`Failed to stream dataset from ${options.url}: ${res.status} ${res.statusText}`);
+      }
+      inputStream = Readable.fromWeb(res.body as any);
+    } else {
+      console.log(`\n[3/4] Streaming local CSV catalog: ${options.filePath}`);
+      inputStream = fs.createReadStream(options.filePath!, { encoding: 'utf-8' });
+    }
+
+    const rl = readline.createInterface({ input: inputStream, crlfDelay: Infinity });
 
     let isHeader = true;
     let headerIndices: Record<string, number> = {};
@@ -287,12 +302,42 @@ export async function runIngestion(options: IngestionOptions) {
       }
 
       const cols = line.split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
-      const name = cols[headerIndices['name'] ?? headerIndices['brand_name'] ?? 0] || 'Unknown Medicine';
-      const genericName = cols[headerIndices['generic_name'] ?? headerIndices['composition'] ?? headerIndices['salt'] ?? 1] || '';
-      const mfgName = cols[headerIndices['manufacturer'] ?? headerIndices['mfg'] ?? 2] || 'General Pharmaceuticals';
-      const mrpRaw = parseFloat(cols[headerIndices['mrp'] ?? headerIndices['price'] ?? 3] || '50');
-      const mrpPaise = Math.round(mrpRaw * 100);
-      const ptrPaise = Math.round(mrpPaise * 0.71);
+      const name = cols[
+        headerIndices['name'] ??
+        headerIndices['brand_name'] ??
+        headerIndices['medicine_name'] ??
+        headerIndices['item_name'] ??
+        0
+      ] || 'Unknown Medicine';
+
+      const genericName = cols[
+        headerIndices['generic_name'] ??
+        headerIndices['composition'] ??
+        headerIndices['short_composition1'] ??
+        headerIndices['salt'] ??
+        headerIndices['salt_composition'] ??
+        1
+      ] || '';
+
+      const mfgName = cols[
+        headerIndices['manufacturer'] ??
+        headerIndices['manufacturer_name'] ??
+        headerIndices['mfg'] ??
+        headerIndices['brand'] ??
+        2
+      ] || 'General Pharmaceuticals';
+
+      const mrpRaw = parseFloat(
+        cols[
+          headerIndices['price'] ??
+          headerIndices['mrp'] ??
+          headerIndices['rate'] ??
+          headerIndices['standard_rate'] ??
+          3
+        ] || '50'
+      );
+      const mrpPaise = Math.round((isNaN(mrpRaw) || mrpRaw <= 0 ? 50 : mrpRaw) * 100);
+      const ptrPaise = Math.round(mrpPaise * 0.71); // standard Indian retail chemist 29% margin
 
       const mfgKey = mfgName.toLowerCase().trim();
       let mfgId = mfgMap.get(mfgKey);
@@ -359,6 +404,7 @@ if (require.main === module) {
   const args = process.argv.slice(2);
   let demoCount: number | undefined = undefined;
   let filePath: string | undefined = undefined;
+  let url: string | undefined = undefined;
   let limit: number | undefined = undefined;
 
   for (let i = 0; i < args.length; i++) {
@@ -368,17 +414,27 @@ if (require.main === module) {
     } else if (args[i] === '--file' && args[i + 1]) {
       filePath = args[i + 1];
       i++;
+    } else if (args[i] === '--url') {
+      const nextArg = args[i + 1];
+      if (nextArg && !nextArg.startsWith('--')) {
+        url = nextArg === 'default'
+          ? 'https://raw.githubusercontent.com/junioralive/Indian-Medicine-Dataset/main/dataset/medicines.csv'
+          : nextArg;
+        i++;
+      } else {
+        url = 'https://raw.githubusercontent.com/junioralive/Indian-Medicine-Dataset/main/dataset/medicines.csv';
+      }
     } else if (args[i] === '--limit' && args[i + 1]) {
       limit = parseInt(args[i + 1], 10);
       i++;
     }
   }
 
-  // Default to 1,000 realistic medicines if run without args
   runIngestion({
     chunkSize: 2000,
-    generateDemoCount: demoCount !== undefined ? demoCount : (filePath ? undefined : 2000),
+    generateDemoCount: demoCount !== undefined ? demoCount : (filePath || url ? undefined : 2000),
     filePath,
+    url,
     limit,
   }).catch((err) => {
     console.error('Ingestion failed:', err);

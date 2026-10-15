@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 import { formatINR, rupeesToPaise, paiseToRupeesStr } from "@/lib/money";
+import { AddCustomerModal } from "@/components/pos/AddCustomerModal";
 
 interface PartyBalance {
   id: string;
@@ -148,6 +149,7 @@ export default function AccountsPage() {
   const [khataFilter, setKhataFilter] = useState<"all" | "dues" | "overdue" | "exceeded">("dues");
   const [activeKhataCustomerId, setActiveKhataCustomerId] = useState("");
   const [showCustomerDrawer, setShowCustomerDrawer] = useState(false);
+  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
 
   // Record Payment Modal State
   const [paymentCustomer, setPaymentCustomer] = useState<KhataCustomer | null>(null);
@@ -674,6 +676,15 @@ export default function AccountsPage() {
                 }`}
               >
                 All Customers
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowAddCustomerModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-md bg-teal-600 hover:bg-teal-700 text-white shadow-xs transition-colors shrink-0 ml-2"
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>+ Add Customer</span>
               </button>
             </div>
           </div>
@@ -2059,6 +2070,17 @@ export default function AccountsPage() {
           </div>
         </div>
       )}
+
+      {/* Register New Customer / Patient Modal */}
+      <AddCustomerModal
+        isOpen={showAddCustomerModal}
+        onClose={() => setShowAddCustomerModal(false)}
+        onCustomerCreated={(newCust) => {
+          fetchKhata();
+          fetchAccounts();
+          setActiveKhataCustomerId(newCust.id);
+        }}
+      />
     </div>
   );
 }

@@ -3213,3 +3213,135 @@ export async function getPurchaseReturnsList(supplierId?: string) {
     })),
   };
 }
+
+// ----------------------------------------------------------------------------
+// 10. SHOP PROFILE & SETTINGS SERVICE
+// ----------------------------------------------------------------------------
+export async function getShopProfile() {
+  const db = await ensureDbReady();
+  const shopRes = await db.execute(`SELECT * FROM shop_profile WHERE id = 1`);
+  const userRes = await db.execute(`SELECT id, name, username FROM users WHERE role_id = 'role_owner' OR id = 'user_admin' LIMIT 1`);
+  return {
+    profile: shopRes.rows[0] || {
+      id: 1,
+      name: 'Apex Life Chemist & Druggist',
+      address: 'Shop 4, Ground Floor, Commercial Complex, MG Road, Bengaluru 560001',
+      phone: '+91 98450 11223',
+      email: 'contact@apexlifechemist.in',
+      gstin: '29AABCU9603R1ZM',
+      drug_license_no_1: 'KA-B2-192842',
+      drug_license_no_2: 'KA-B3-192843',
+      pharmacist_name: 'Vikas Sharma',
+      pharmacist_reg_no: 'KSPC-49201-A',
+      state_code: '29',
+    },
+    user: userRes.rows[0] || { id: 'user_admin', name: 'Admin Pharmacist', username: 'admin' },
+  };
+}
+
+export async function updateShopProfile(payload: {
+  name?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  gstin?: string;
+  drugLicenseNo1?: string;
+  drugLicenseNo2?: string;
+  pharmacistName?: string;
+  pharmacistRegNo?: string;
+  stateCode?: string;
+  adminName?: string;
+}) {
+  const db = await ensureDbReady();
+  const current = await getShopProfile();
+  const cur = current.profile as any;
+
+  const name = payload.name !== undefined ? payload.name.trim() : String(cur.name || 'Pharmacy');
+  const address = payload.address !== undefined ? payload.address.trim() : String(cur.address || '');
+  const phone = payload.phone !== undefined ? payload.phone.trim() : String(cur.phone || '');
+  const email = payload.email !== undefined ? payload.email.trim() : String(cur.email || '');
+  const gstin = payload.gstin !== undefined ? payload.gstin.trim().toUpperCase() : String(cur.gstin || '');
+  const dl1 = payload.drugLicenseNo1 !== undefined ? payload.drugLicenseNo1.trim().toUpperCase() : String(cur.drug_license_no_1 || '');
+  const dl2 = payload.drugLicenseNo2 !== undefined ? payload.drugLicenseNo2.trim().toUpperCase() : String(cur.drug_license_no_2 || '');
+  const pName = payload.pharmacistName !== undefined ? payload.pharmacistName.trim() : String(cur.pharmacist_name || '');
+  const pReg = payload.pharmacistRegNo !== undefined ? payload.pharmacistRegNo.trim().toUpperCase() : String(cur.pharmacist_reg_no || '');
+  const stateCode = payload.stateCode !== undefined ? payload.stateCode.trim() : String(cur.state_code || '29');
+
+  await db.execute({
+    sql: `UPDATE shop_profile SET
+      name = ?, address = ?, phone = ?, email = ?, gstin = ?,
+      drug_license_no_1 = ?, drug_license_no_2 = ?, pharmacist_name = ?,
+      pharmacist_reg_no = ?, state_code = ?
+      WHERE id = 1`,
+    args: [name, address, phone, email, gstin, dl1, dl2, pName, pReg, stateCode],
+  });
+
+  if (payload.adminName && payload.adminName.trim()) {
+    await db.execute({
+      sql: `UPDATE users SET name = ? WHERE id = 'user_admin' OR role_id = 'role_owner'`,
+      args: [payload.adminName.trim()],
+    });
+  }
+
+  return { success: true, updated: { name, gstin, phone, address, dl1, dl2, pName, pReg } };
+}
+
+// ----------------------------------------------------------------------------
+// 11. CUSTOMER & DOCTOR MASTER CREATION
+// ----------------------------------------------------------------------------
+export async function createCustomer(payload: {
+  name: string;
+  phone: string;
+  address?: string;
+  stateCode?: string;
+  gstin?: string;
+  creditLimitPaise?: number;
+  openingBalancePaise?: number;
+  openingBalanceType?: 'dr' | 'cr';
+  notes?: string;
+}) {
+  const db = await ensureDbReady();
+  const id = `party_cust_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const name = payload.name.trim();
+  const phone = payload.phone.trim();
+  const address = payload.address ? payload.address.trim() : '';
+  const stateCode = payload.stateCode ? payload.stateCode.trim() : '29';
+  const gstin = payload.gstin ? payload.gstin.trim().toUpperCase() : '';
+  const creditLimit = Number(payload.creditLimitPaise || 0);
+  const opBal = Number(payload.openingBalancePaise || 0);
+  const opType = payload.openingBalanceType || 'dr';
+  const notes = payload.notes ? payload.notes.trim() : '';
+  const nowIso = new Date().toISOString();
+
+  await db.execute({
+    sql: `INSERT INTO parties (
+      id, type, name, phone, email, address, state_code, gstin,
+      credit_limit_paise, opening_balance_paise, opening_balance_type, notes, is_active, created_at
+    ) VALUES (?, 'customer', ?, ?, '', ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+    args: [id, name, phone, address, stateCode, gstin, creditLimit, opBal, opType, notes, nowIso],
+  });
+
+  return { id, name, phone, address, creditLimitPaise: creditLimit };
+}
+
+export async function createDoctor(payload: {
+  name: string;
+  regNo: string;
+  phone?: string;
+  clinic?: string;
+}) {
+  const db = await ensureDbReady();
+  const id = `doc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const name = payload.name.trim();
+  const regNo = payload.regNo.trim().toUpperCase();
+  const phone = payload.phone ? payload.phone.trim() : '';
+  const clinic = payload.clinic ? payload.clinic.trim() : '';
+
+  await db.execute({
+    sql: `INSERT INTO doctors (id, name, reg_no, phone, clinic, is_active) VALUES (?, ?, ?, ?, ?, 1)`,
+    args: [id, name, regNo, phone, clinic],
+  });
+
+  return { id, name, regNo, phone, clinic };
+}
+

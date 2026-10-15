@@ -17,6 +17,7 @@ import {
   Activity,
   ChevronLeft,
   ChevronRight,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -72,6 +73,11 @@ const NAV_ITEMS: NavItem[] = [
     icon: UploadCloud,
     badge: "Marg",
     badgeVariant: "teal",
+  },
+  {
+    name: "Store Settings",
+    href: "/settings",
+    icon: Settings,
   },
 ];
 

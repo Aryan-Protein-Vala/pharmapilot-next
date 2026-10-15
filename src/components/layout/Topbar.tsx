@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   Sun,
   Moon,
@@ -10,6 +11,7 @@ import {
   Database,
   Wifi,
   PanelLeft,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,9 +24,9 @@ interface TopbarProps {
 }
 
 export function Topbar({
-  storeName = "Apex Life Chemist & Druggist",
-  drugLicenseNo = "DL-20B/21B-48921",
-  gstin = "07AAAAA0000A1Z5",
+  storeName: initialStoreName = "Apex Life Chemist & Druggist",
+  drugLicenseNo: initialDrugLicenseNo = "DL-20B/21B-48921",
+  gstin: initialGstin = "07AAAAA0000A1Z5",
   onToggleSidebar,
   isSidebarExpanded = false,
 }: TopbarProps) {
@@ -32,6 +34,11 @@ export function Topbar({
   const [currentTime, setCurrentTime] = useState<string>("");
   const [currentDate, setCurrentDate] = useState<string>("");
   const [isDark, setIsDark] = useState<boolean>(false);
+  const [storeProfile, setStoreProfile] = useState({
+    name: initialStoreName,
+    dl: initialDrugLicenseNo,
+    gst: initialGstin,
+  });
 
   // Initialize clock and theme once mounted on client
   useEffect(() => {
@@ -74,8 +81,38 @@ export function Topbar({
       setIsDark(false);
     }
 
-    return () => clearInterval(interval);
-  }, []);
+    // Dynamic Shop Settings Fetcher
+    const fetchShopProfile = async () => {
+      try {
+        const res = await fetch("/api/settings");
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.shop) {
+            setStoreProfile({
+              name: data.shop.legal_name || initialStoreName,
+              dl: data.shop.dl_20b ? `DL-${data.shop.dl_20b}` : initialDrugLicenseNo,
+              gst: data.shop.gstin || initialGstin,
+            });
+          }
+        }
+      } catch (err) {
+        // Fallback gracefully to initial props
+      }
+    };
+
+    fetchShopProfile();
+
+    const handleSettingsUpdated = () => {
+      fetchShopProfile();
+    };
+
+    window.addEventListener("pharmapilot_settings_updated", handleSettingsUpdated);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("pharmapilot_settings_updated", handleSettingsUpdated);
+    };
+  }, [initialStoreName, initialDrugLicenseNo, initialGstin]);
 
   const toggleTheme = () => {
     const nextDark = !isDark;
@@ -112,7 +149,7 @@ export function Topbar({
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
             <h1 className="text-sm font-bold text-navy-900 dark:text-slate-100 tracking-tight leading-none">
-              {storeName}
+              {storeProfile.name}
             </h1>
             <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-navy-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-navy-700">
               Retail Counter 01
@@ -130,19 +167,19 @@ export function Topbar({
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800/60 text-teal-800 dark:text-teal-300 text-xs font-medium">
           <ShieldCheck className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 stroke-[2.25]" />
           <span className="font-semibold text-[11px]">Form 20B/21B:</span>
-          <span className="font-mono text-[11px] tabular-nums">{drugLicenseNo}</span>
+          <span className="font-mono text-[11px] tabular-nums">{storeProfile.dl}</span>
         </div>
 
         {/* GSTIN Badge */}
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-50 dark:bg-navy-800/70 border border-slate-200 dark:border-navy-700 text-slate-700 dark:text-slate-300 text-xs font-medium">
           <Building2 className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 stroke-[2]" />
           <span className="font-semibold text-[11px]">GSTIN:</span>
-          <span className="font-mono text-[11px] tabular-nums tracking-wide">{gstin}</span>
+          <span className="font-mono text-[11px] tabular-nums tracking-wide">{storeProfile.gst}</span>
         </div>
       </div>
 
-      {/* Right Side: Local DB Status, Live System Clock, Dark/Light Mode Toggle */}
-      <div className="flex items-center gap-3">
+      {/* Right Side: Local DB Status, Live System Clock, Settings Link, Dark/Light Mode Toggle */}
+      <div className="flex items-center gap-2.5">
         {/* SQLite / Local DB Live Status Pill */}
         <div className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 text-xs font-medium">
           <span className="relative flex h-2 w-2">
@@ -162,6 +199,16 @@ export function Topbar({
             <span className="text-slate-500 dark:text-slate-400 hidden sm:inline">{mounted ? currentDate : "---"}</span>
           </div>
         </div>
+
+        {/* Settings Navigation Link */}
+        <Link
+          href="/settings"
+          className="p-2 rounded-md border border-slate-200 dark:border-navy-700 bg-slate-50 dark:bg-navy-800 text-slate-600 dark:text-slate-300 hover:text-navy-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-navy-700 transition-colors"
+          title="Store Settings & Pharmacy Identity"
+          aria-label="Store Settings"
+        >
+          <Settings className="w-4 h-4 stroke-[2]" />
+        </Link>
 
         {/* Theme Toggle Button */}
         <button

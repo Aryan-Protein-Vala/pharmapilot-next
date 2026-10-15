@@ -34,3 +34,4 @@ pharmapilot_vitest.db*
 pharmapilot.db*
 *.db-shm
 *.db-wal
+.env*

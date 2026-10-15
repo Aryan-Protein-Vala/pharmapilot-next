@@ -22,12 +22,15 @@ import {
   AlertCircle,
   Layers,
   RotateCcw,
+  UserPlus,
 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 import { formatINR, paiseToRupeesStr, rupeesToPaise } from "@/lib/money";
 import { daysUntilExpiry, isBatchExpired } from "@/lib/dates";
 import { generateQrSvg, buildUpiUri } from "@/lib/qr";
 import { SalesReturnModal } from "@/components/pos/SalesReturnModal";
+import { AddCustomerModal } from "@/components/pos/AddCustomerModal";
+import { AddDoctorModal } from "@/components/pos/AddDoctorModal";
 
 interface CatalogItem {
   id: string;
@@ -103,6 +106,8 @@ export default function PosBillingPage() {
   const [substituteItem, setSubstituteItem] = useState<CatalogItem | null>(null);
   const [showRecallModal, setShowRecallModal] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
+  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
+  const [showAddDoctorModal, setShowAddDoctorModal] = useState(false);
   const [compliancePromptOpen, setCompliancePromptOpen] = useState(false);
   const [printModalData, setPrintModalData] = useState<any | null>(null);
   const [printFormat, setPrintFormat] = useState<"a4" | "80mm" | "58mm">("80mm");
@@ -481,28 +486,39 @@ export default function PosBillingPage() {
       {/* Top Counter Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg bg-white dark:bg-navy-800 border border-slate-200 dark:border-navy-700 shadow-sm shrink-0">
         <div className="flex flex-wrap items-center gap-2 flex-1">
-          {/* Customer Picker */}
-          <div className="relative min-w-[200px] flex-1 max-w-[260px]">
-            <select
-              value={customerId}
-              onChange={(e) => {
-                setCustomerId(e.target.value);
-                const cust = customers.find((c) => c.id === e.target.value);
-                if (cust) {
-                  setPatientName(cust.name);
-                  setPatientAddress(cust.address || "");
-                }
-              }}
-              className="w-full h-8 pl-8 pr-3 text-xs rounded-md border border-slate-200 dark:border-navy-700 bg-slate-50 dark:bg-navy-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-teal-500"
+          {/* Customer Picker with Quick + Button */}
+          <div className="flex items-center gap-1 min-w-[210px] flex-1 max-w-[270px]">
+            <div className="relative flex-1">
+              <select
+                value={customerId}
+                onChange={(e) => {
+                  setCustomerId(e.target.value);
+                  const cust = customers.find((c) => c.id === e.target.value);
+                  if (cust) {
+                    setPatientName(cust.name);
+                    setPatientAddress(cust.address || "");
+                  }
+                }}
+                className="w-full h-8 pl-8 pr-3 text-xs rounded-md border border-slate-200 dark:border-navy-700 bg-slate-50 dark:bg-navy-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-teal-500"
+              >
+                <option value="">Walk-in Retail Customer</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.phone || "No Ph"})
+                  </option>
+                ))}
+              </select>
+              <User className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400 stroke-[2]" />
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAddCustomerModal(true)}
+              className="h-8 w-8 rounded-md border border-slate-200 dark:border-navy-700 bg-slate-50 dark:bg-navy-900 text-slate-600 dark:text-slate-300 hover:text-teal-600 hover:border-teal-400 dark:hover:text-teal-400 flex items-center justify-center shrink-0 transition-colors shadow-xs"
+              title="Add New Customer / Patient (+)"
+              aria-label="Add New Customer"
             >
-              <option value="">Walk-in Retail Customer</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.phone || "No Ph"})
-                </option>
-              ))}
-            </select>
-            <User className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400 stroke-[2]" />
+              <UserPlus className="w-3.5 h-3.5 stroke-[2]" />
+            </button>
           </div>
 
           {/* Patient Name */}
@@ -511,32 +527,43 @@ export default function PosBillingPage() {
             placeholder="Patient Name"
             value={patientName}
             onChange={(e) => setPatientName(e.target.value)}
-            className={`h-8 px-2.5 text-xs rounded-md border bg-slate-50 dark:bg-navy-900 text-slate-900 dark:text-slate-100 min-w-[150px] focus:outline-none ${
+            className={`h-8 px-2.5 text-xs rounded-md border bg-slate-50 dark:bg-navy-900 text-slate-900 dark:text-slate-100 min-w-[140px] focus:outline-none ${
               hasRestrictedSchedule && !patientName.trim()
                 ? "border-rose-400 focus:border-rose-500"
                 : "border-slate-200 dark:border-navy-700 focus:border-teal-500"
             }`}
           />
 
-          {/* Prescribing Doctor */}
-          <div className="relative min-w-[200px] flex-1 max-w-[260px]">
-            <select
-              value={doctorId}
-              onChange={(e) => setDoctorId(e.target.value)}
-              className={`w-full h-8 pl-8 pr-3 text-xs rounded-md border bg-slate-50 dark:bg-navy-900 text-slate-900 dark:text-slate-100 focus:outline-none ${
-                hasRestrictedSchedule && !doctorId
-                  ? "border-rose-400 focus:border-rose-500"
-                  : "border-slate-200 dark:border-navy-700 focus:border-teal-500"
-              }`}
+          {/* Prescribing Doctor with Quick + Button */}
+          <div className="flex items-center gap-1 min-w-[210px] flex-1 max-w-[270px]">
+            <div className="relative flex-1">
+              <select
+                value={doctorId}
+                onChange={(e) => setDoctorId(e.target.value)}
+                className={`w-full h-8 pl-8 pr-3 text-xs rounded-md border bg-slate-50 dark:bg-navy-900 text-slate-900 dark:text-slate-100 focus:outline-none ${
+                  hasRestrictedSchedule && !doctorId
+                    ? "border-rose-400 focus:border-rose-500"
+                    : "border-slate-200 dark:border-navy-700 focus:border-teal-500"
+                }`}
+              >
+                <option value="">Select Doctor...</option>
+                {doctors.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} ({d.reg_no})
+                  </option>
+                ))}
+              </select>
+              <Stethoscope className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400 stroke-[2]" />
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAddDoctorModal(true)}
+              className="h-8 w-8 rounded-md border border-slate-200 dark:border-navy-700 bg-slate-50 dark:bg-navy-900 text-slate-600 dark:text-slate-300 hover:text-teal-600 hover:border-teal-400 dark:hover:text-teal-400 flex items-center justify-center shrink-0 transition-colors shadow-xs"
+              title="Add New Prescribing Doctor (+)"
+              aria-label="Add New Doctor"
             >
-              <option value="">Select Doctor...</option>
-              {doctors.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} ({d.reg_no})
-                </option>
-              ))}
-            </select>
-            <Stethoscope className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400 stroke-[2]" />
+              <Plus className="w-3.5 h-3.5 stroke-[2.25]" />
+            </button>
           </div>
 
           {/* Payment Mode */}
@@ -1309,6 +1336,28 @@ export default function PosBillingPage() {
         shop={shop}
         onReturnSuccess={(res) => {
           loadCatalog();
+        }}
+      />
+
+      {/* Add New Customer / Patient Modal */}
+      <AddCustomerModal
+        isOpen={showAddCustomerModal}
+        onClose={() => setShowAddCustomerModal(false)}
+        onCustomerCreated={(newCust) => {
+          setCustomers((prev) => [newCust, ...prev]);
+          setCustomerId(newCust.id);
+          setPatientName(newCust.name);
+          setPatientAddress(newCust.address || "");
+        }}
+      />
+
+      {/* Add New Prescribing Doctor Modal */}
+      <AddDoctorModal
+        isOpen={showAddDoctorModal}
+        onClose={() => setShowAddDoctorModal(false)}
+        onDoctorCreated={(newDoc) => {
+          setDoctors((prev) => [newDoc, ...prev]);
+          setDoctorId(newDoc.id);
         }}
       />
     </div>
