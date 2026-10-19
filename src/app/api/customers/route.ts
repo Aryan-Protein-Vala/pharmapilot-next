@@ -35,23 +35,34 @@ export async function POST(request: Request) {
     if (!body.name || !body.name.trim()) {
       return NextResponse.json({ error: 'Customer name is required' }, { status: 400 });
     }
-    if (!body.phone || !body.phone.trim()) {
-      return NextResponse.json({ error: 'Customer phone number is required' }, { status: 400 });
-    }
+
+    const phone = body.phone ? body.phone.trim() : '';
+    const creditLimitPaise = body.creditLimitPaise !== undefined
+      ? Number(body.creditLimitPaise)
+      : (body.creditLimitRupees ? Math.round(Number(body.creditLimitRupees) * 100) : 0);
 
     const result = await createCustomer({
-      name: body.name,
-      phone: body.phone,
+      name: body.name.trim(),
+      phone,
       address: body.address,
       stateCode: body.stateCode,
       gstin: body.gstin,
-      creditLimitPaise: body.creditLimitPaise,
+      creditLimitPaise,
       openingBalancePaise: body.openingBalancePaise,
       openingBalanceType: body.openingBalanceType,
       notes: body.notes,
     });
 
-    return NextResponse.json(result, { status: 201 });
+    const customer = {
+      id: result.id,
+      name: result.name,
+      phone: result.phone,
+      address: result.address,
+      credit_limit_paise: result.creditLimitPaise,
+      creditLimitPaise: result.creditLimitPaise,
+    };
+
+    return NextResponse.json({ success: true, customer, ...customer }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || 'Failed to create customer' },

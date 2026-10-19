@@ -107,9 +107,41 @@ export function Sidebar({ isPinned, onTogglePin, isHovered, setIsHovered }: Side
     }, 120);
   };
 
+  const [adminUser, setAdminUser] = useState({
+    name: "Reg. Pharmacist",
+    subtext: "Lic: 20B/21B Active",
+    initials: "RP",
+  });
+
+  const fetchUserProfile = async () => {
+    try {
+      const res = await fetch("/api/settings");
+      if (res.ok) {
+        const data = await res.json();
+        const userName = data?.user?.name || data?.profile?.pharmacist_name || "Reg. Pharmacist";
+        const sub = data?.profile?.pharmacist_reg_no
+          ? `Reg: ${data.profile.pharmacist_reg_no}`
+          : "Owner / Pharmacist";
+        const initials = userName
+          .split(" ")
+          .filter(Boolean)
+          .map((n: string) => n[0])
+          .slice(0, 2)
+          .join("")
+          .toUpperCase() || "RP";
+        setAdminUser({ name: userName, subtext: sub, initials });
+      }
+    } catch {}
+  };
+
   useEffect(() => {
+    fetchUserProfile();
+    window.addEventListener("pharmapilot_settings_updated", fetchUserProfile);
+    window.addEventListener("focus", fetchUserProfile);
     return () => {
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+      window.removeEventListener("pharmapilot_settings_updated", fetchUserProfile);
+      window.removeEventListener("focus", fetchUserProfile);
     };
   }, []);
 
@@ -277,15 +309,15 @@ export function Sidebar({ isPinned, onTogglePin, isHovered, setIsHovered }: Side
 
         <div className="flex items-center gap-2.5 px-1 py-1">
           <div className="w-7 h-7 min-w-[28px] rounded-full bg-slate-100 dark:bg-navy-800 border border-slate-200 dark:border-navy-700 flex items-center justify-center text-[11px] font-semibold text-navy-800 dark:text-slate-200 shrink-0">
-            RP
+            {adminUser.initials}
           </div>
           {isExpanded && (
             <div className="flex flex-col overflow-hidden whitespace-nowrap min-w-0">
               <span className="text-xs font-medium text-navy-900 dark:text-slate-200 truncate leading-none">
-                Reg. Pharmacist
+                {adminUser.name}
               </span>
-              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono mt-0.5">
-                Lic: 20B/21B Active
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono mt-0.5 truncate">
+                {adminUser.subtext}
               </span>
             </div>
           )}

@@ -56,9 +56,10 @@ export function AddDoctorModal({
         throw new Error(data.error || "Failed to register doctor");
       }
 
-      success("Doctor Registered", `${data.doctor.name} (${data.doctor.reg_no}) registered successfully.`);
+      const doc = data.doctor || data;
+      success("Doctor Registered", `${doc.name || "Doctor"} (${doc.reg_no || doc.regNo || "Reg"}) registered successfully.`);
 
-      onDoctorCreated(data.doctor);
+      onDoctorCreated(doc);
       setName("");
       setRegNo("");
       setQualification("MBBS, MD");

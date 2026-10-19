@@ -87,11 +87,13 @@ export function Topbar({
         const res = await fetch("/api/settings");
         if (res.ok) {
           const data = await res.json();
-          if (data?.shop) {
+          const p = data?.profile || data?.shop || {};
+          if (p.name || p.legal_name) {
+            const dl = p.drug_license_no_1 || p.dl_20b || initialDrugLicenseNo;
             setStoreProfile({
-              name: data.shop.legal_name || initialStoreName,
-              dl: data.shop.dl_20b ? `DL-${data.shop.dl_20b}` : initialDrugLicenseNo,
-              gst: data.shop.gstin || initialGstin,
+              name: p.name || p.legal_name || initialStoreName,
+              dl: dl.startsWith("DL-") ? dl : `DL-${dl}`,
+              gst: p.gstin || initialGstin,
             });
           }
         }
@@ -107,10 +109,12 @@ export function Topbar({
     };
 
     window.addEventListener("pharmapilot_settings_updated", handleSettingsUpdated);
+    window.addEventListener("focus", handleSettingsUpdated);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener("pharmapilot_settings_updated", handleSettingsUpdated);
+      window.removeEventListener("focus", handleSettingsUpdated);
     };
   }, [initialStoreName, initialDrugLicenseNo, initialGstin]);
 

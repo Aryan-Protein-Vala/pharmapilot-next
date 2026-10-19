@@ -33,7 +33,16 @@ export async function POST(request: Request) {
       clinic: body.clinic,
     });
 
-    return NextResponse.json(result, { status: 201 });
+    const doctor = {
+      id: result.id,
+      name: result.name,
+      reg_no: result.regNo,
+      regNo: result.regNo,
+      phone: result.phone,
+      clinic: result.clinic,
+    };
+
+    return NextResponse.json({ success: true, doctor, ...doctor }, { status: 201 });
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || 'Failed to register doctor' },

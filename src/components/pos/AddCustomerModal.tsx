@@ -49,9 +49,10 @@ export function AddCustomerModal({
         throw new Error(data.error || "Failed to create customer");
       }
 
-      success("Customer Registered", `${data.customer.name} added successfully.`);
+      const cust = data.customer || data;
+      success("Customer Registered", `${cust.name || "Customer"} added successfully.`);
 
-      onCustomerCreated(data.customer);
+      onCustomerCreated(cust);
       setName("");
       setPhone("");
       setAddress("");
