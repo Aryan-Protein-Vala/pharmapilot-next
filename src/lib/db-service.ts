@@ -8,31 +8,8 @@ import { isBatchExpired, daysUntilExpiry, parseExpiryInput } from './dates';
 import { rupeesToPaise, formatINR, paiseToRupeesStr } from './money';
 import type { Client } from '@libsql/client';
 
-let isInitialized = false;
-
 export async function ensureDbReady(): Promise<Client> {
-  const db = getDb();
-  if (!isInitialized) {
-    await initDatabase(db);
-    // Check if shop_profile or items exist; if completely empty, run seeder
-    const check = await db.execute('SELECT COUNT(*) as cnt FROM items');
-    if (Number(check.rows[0]?.cnt || 0) === 0) {
-      await seedDatabase(db);
-    }
-    // Ensure items_fts is synced if items exist
-    try {
-      const ftsCheck = await db.execute('SELECT COUNT(*) as cnt FROM items_fts');
-      if (Number(ftsCheck.rows[0]?.cnt || 0) === 0 && Number(check.rows[0]?.cnt || 0) > 0) {
-        await db.execute(
-          'INSERT OR IGNORE INTO items_fts(rowid, item_id, name, generic_name, barcode) SELECT rowid, id, name, generic_name, barcode FROM items'
-        );
-      }
-    } catch {
-      // Ignore sync error if FTS already populated
-    }
-    isInitialized = true;
-  }
-  return db;
+  return getDb();
 }
 
 // ----------------------------------------------------------------------------
@@ -209,43 +186,54 @@ export async function getPosCatalog(limit: number = 50) {
     args: [limit],
   });
 
-  // Active units
-  const unitsRes = await db.execute(`SELECT id, item_id, unit_name, qty_in_base_unit, is_default_sale FROM item_units`);
+  const itemIds = itemsRes.rows.map((r) => String(r.id));
   const unitsMap = new Map<string, any[]>();
-  for (const u of unitsRes.rows) {
-    const list = unitsMap.get(String(u.item_id)) || [];
-    list.push(u);
-    unitsMap.set(String(u.item_id), list);
-  }
-
-  // Batches with live stock from v_batch_stock
-  const batchesRes = await db.execute(`
-    SELECT
-      b.id, b.item_id, b.batch_no, b.expiry_date, b.mrp_paise, b.ptr_paise,
-      v.current_qty_base
-    FROM batches b
-    JOIN v_batch_stock v ON v.batch_id = b.id
-    ORDER BY b.expiry_date ASC
-  `);
   const batchMap = new Map<string, any[]>();
-  for (const b of batchesRes.rows) {
-    const list = batchMap.get(String(b.item_id)) || [];
-    list.push({
-      id: b.id,
-      itemId: b.item_id,
-      batchNo: b.batch_no,
-      expiryDate: b.expiry_date,
-      mrpPaise: Number(b.mrp_paise),
-      ptrPaise: Number(b.ptr_paise),
-      availableQtyBase: Number(b.current_qty_base || 0),
+
+  if (itemIds.length > 0) {
+    const placeholders = itemIds.map(() => '?').join(',');
+    const unitsRes = await db.execute({
+      sql: `SELECT id, item_id, unit_name, qty_in_base_unit, is_default_sale FROM item_units WHERE item_id IN (${placeholders})`,
+      args: itemIds,
     });
-    batchMap.set(String(b.item_id), list);
+    for (const u of unitsRes.rows) {
+      const list = unitsMap.get(String(u.item_id)) || [];
+      list.push(u);
+      unitsMap.set(String(u.item_id), list);
+    }
+
+    const batchesRes = await db.execute({
+      sql: `
+        SELECT
+          b.id, b.item_id, b.batch_no, b.expiry_date, b.mrp_paise, b.ptr_paise,
+          COALESCE(SUM(sm.qty_base_signed), 0) as current_qty_base
+        FROM batches b
+        LEFT JOIN stock_movements sm ON sm.batch_id = b.id
+        WHERE b.item_id IN (${placeholders})
+        GROUP BY b.id
+        ORDER BY b.expiry_date ASC
+      `,
+      args: itemIds,
+    });
+    for (const b of batchesRes.rows) {
+      const list = batchMap.get(String(b.item_id)) || [];
+      list.push({
+        id: b.id,
+        itemId: b.item_id,
+        batchNo: b.batch_no,
+        expiryDate: b.expiry_date,
+        mrpPaise: Number(b.mrp_paise),
+        ptrPaise: Number(b.ptr_paise),
+        availableQtyBase: Number(b.current_qty_base || 0),
+      });
+      batchMap.set(String(b.item_id), list);
+    }
   }
 
-  // Customers & Doctors & Shop Profile
-  const customersRes = await db.execute(`SELECT id, name, phone, address, state_code FROM parties WHERE type IN ('customer','both') AND is_active = 1 ORDER BY name ASC`);
-  const doctorsRes = await db.execute(`SELECT id, name, reg_no, clinic FROM doctors WHERE is_active = 1 ORDER BY name ASC`);
-  const shopRes = await db.execute(`SELECT * FROM shop_profile WHERE id = 1`);
+  // Customers & Doctors & Shop Profile (bounded limits for fast initial page load)
+  const customersRes = await db.execute(`SELECT id, name, phone, address, state_code FROM parties WHERE type IN ('customer','both') AND is_active = 1 ORDER BY name ASC LIMIT 100`);
+  const doctorsRes = await db.execute(`SELECT id, name, reg_no, clinic FROM doctors WHERE is_active = 1 ORDER BY name ASC LIMIT 100`);
+  const shopData = await getShopProfile();
 
   const catalog = itemsRes.rows.map((row) => {
     const id = String(row.id);
@@ -276,14 +264,14 @@ export async function getPosCatalog(limit: number = 50) {
     catalog,
     customers: customersRes.rows,
     doctors: doctorsRes.rows,
-    shop: shopRes.rows[0] || {},
+    shop: shopData.profile || {},
   };
 }
 
 /**
  * High-Scale Server-Side Debounced Full-Text Search using SQLite FTS5.
  * Searches item name, generic/salt formulation, barcode, or prefix in <5ms.
- * Returns items joined with active batches and live v_batch_stock.
+ * Returns items joined with active batches.
  */
 export async function searchPosItemsFTS(query: string, limit: number = 25) {
   const db = await ensureDbReady();
@@ -305,52 +293,29 @@ export async function searchPosItemsFTS(query: string, limit: number = 25) {
       .map((t) => t.replace(/[^a-zA-Z0-9]/g, ''))
       .filter(Boolean);
 
-    const ftsItemIds: string[] = [];
     if (tokens.length > 0) {
-      const ftsPattern = tokens.map((t) => `"${t}"*`).join(' AND ');
+      const ftsPattern = tokens.map((t) => `${t}*`).join(' AND ');
       try {
         const ftsRes = await db.execute({
-          sql: `SELECT item_id, rank FROM items_fts WHERE items_fts MATCH ? ORDER BY rank ASC LIMIT ?`,
+          sql: `SELECT item_id FROM items_fts WHERE items_fts MATCH ? LIMIT ?`,
           args: [ftsPattern, limit],
         });
         for (const row of ftsRes.rows) {
-          ftsItemIds.push(String(row.item_id));
+          matchedItemIds.push(String(row.item_id));
         }
       } catch (err) {
         // Fallback below
       }
     }
 
-    // 2. Barcode match
-    const barcodeRes = await db.execute({
-      sql: `SELECT id FROM items WHERE is_active = 1 AND (barcode = ? OR barcode LIKE ?) LIMIT ?`,
-      args: [cleanQ, `${cleanQ}%`, Math.min(5, limit)],
-    });
-    const barcodeItemIds = barcodeRes.rows.map((r) => String(r.id));
-
-    // 3. Batch number match
-    const batchRes = await db.execute({
-      sql: `SELECT DISTINCT item_id FROM batches WHERE batch_no = ? OR batch_no LIKE ? LIMIT ?`,
-      args: [cleanQ, `${cleanQ}%`, Math.min(5, limit)],
-    });
-    const batchItemIds = batchRes.rows.map((r) => String(r.item_id));
-
-    // Combine in priority order: FTS rank > Barcode match > Batch match
-    const combinedSet = new Set<string>();
-    for (const id of ftsItemIds) combinedSet.add(id);
-    for (const id of barcodeItemIds) combinedSet.add(id);
-    for (const id of batchItemIds) combinedSet.add(id);
-
-    // 4. Fallback LIKE if still empty
-    if (combinedSet.size === 0) {
+    // 2. Fallback to LIKE if FTS yielded 0 results
+    if (matchedItemIds.length === 0) {
       const likeRes = await db.execute({
-        sql: `SELECT id FROM items WHERE is_active = 1 AND (name LIKE ? OR generic_name LIKE ?) LIMIT ?`,
-        args: [`%${cleanQ}%`, `%${cleanQ}%`, limit],
+        sql: `SELECT id FROM items WHERE is_active = 1 AND (name LIKE ? OR generic_name LIKE ? OR barcode = ?) LIMIT ?`,
+        args: [`%${cleanQ}%`, `%${cleanQ}%`, cleanQ, limit],
       });
-      for (const r of likeRes.rows) combinedSet.add(String(r.id));
+      matchedItemIds = likeRes.rows.map((r) => String(r.id));
     }
-
-    matchedItemIds = Array.from(combinedSet).slice(0, limit);
   }
 
   if (matchedItemIds.length === 0) {
@@ -358,27 +323,44 @@ export async function searchPosItemsFTS(query: string, limit: number = 25) {
   }
 
   const placeholders = matchedItemIds.map(() => '?').join(',');
-  const itemsRes = await db.execute({
-    sql: `
-      SELECT
-        i.id, i.name, i.generic_name, i.category, i.drug_form, i.hsn_code,
-        i.gst_rate_bp, i.schedule, i.base_unit, i.rack_location, i.barcode,
-        m.name as manufacturer_name
-      FROM items i
-      LEFT JOIN manufacturers m ON m.id = i.manufacturer_id
-      WHERE i.id IN (${placeholders})
-    `,
-    args: matchedItemIds,
-  });
 
-  const unitsRes = await db.execute({
-    sql: `
-      SELECT id, item_id, unit_name, qty_in_base_unit, is_default_sale
-      FROM item_units
-      WHERE item_id IN (${placeholders})
-    `,
-    args: matchedItemIds,
-  });
+  // Parallel fetch: Items, Units, and Batches in 1 concurrent round-trip
+  const [itemsRes, unitsRes, batchesRes] = await Promise.all([
+    db.execute({
+      sql: `
+        SELECT
+          i.id, i.name, i.generic_name, i.category, i.drug_form, i.hsn_code,
+          i.gst_rate_bp, i.schedule, i.base_unit, i.rack_location, i.barcode,
+          m.name as manufacturer_name
+        FROM items i
+        LEFT JOIN manufacturers m ON m.id = i.manufacturer_id
+        WHERE i.id IN (${placeholders})
+      `,
+      args: matchedItemIds,
+    }),
+    db.execute({
+      sql: `
+        SELECT id, item_id, unit_name, qty_in_base_unit, is_default_sale
+        FROM item_units
+        WHERE item_id IN (${placeholders})
+      `,
+      args: matchedItemIds,
+    }),
+    db.execute({
+      sql: `
+        SELECT
+          b.id, b.item_id, b.batch_no, b.expiry_date, b.mrp_paise, b.ptr_paise,
+          COALESCE(SUM(sm.qty_base_signed), 0) as current_qty_base
+        FROM batches b
+        LEFT JOIN stock_movements sm ON sm.batch_id = b.id
+        WHERE b.item_id IN (${placeholders})
+        GROUP BY b.id
+        ORDER BY b.expiry_date ASC
+      `,
+      args: matchedItemIds,
+    }),
+  ]);
+
   const unitsMap = new Map<string, any[]>();
   for (const u of unitsRes.rows) {
     const list = unitsMap.get(String(u.item_id)) || [];
@@ -386,18 +368,6 @@ export async function searchPosItemsFTS(query: string, limit: number = 25) {
     unitsMap.set(String(u.item_id), list);
   }
 
-  const batchesRes = await db.execute({
-    sql: `
-      SELECT
-        b.id, b.item_id, b.batch_no, b.expiry_date, b.mrp_paise, b.ptr_paise,
-        v.current_qty_base
-      FROM batches b
-      JOIN v_batch_stock v ON v.batch_id = b.id
-      WHERE b.item_id IN (${placeholders})
-      ORDER BY b.expiry_date ASC
-    `,
-    args: matchedItemIds,
-  });
   const batchMap = new Map<string, any[]>();
   for (const b of batchesRes.rows) {
     const list = batchMap.get(String(b.item_id)) || [];
@@ -1025,64 +995,111 @@ export async function getSaleInvoiceForReturn(invoiceNo: string) {
 // ----------------------------------------------------------------------------
 // 3. INVENTORY SERVICE
 // ----------------------------------------------------------------------------
-export async function getInventoryStock() {
+export async function getInventoryStock(options?: {
+  query?: string;
+  filter?: string;
+  limit?: number;
+  offset?: number;
+}) {
   const db = await ensureDbReady();
   const todayIso = new Date().toISOString().slice(0, 10);
+  const q = (options?.query || '').trim();
+  const limit = Math.min(250, Math.max(1, options?.limit || 100));
+  const offset = Math.max(0, options?.offset || 0);
 
-  const itemsRes = await db.execute(`
-    SELECT
-      i.id, i.name, i.generic_name, i.category, i.drug_form, i.hsn_code,
-      i.gst_rate_bp, i.schedule, i.base_unit, i.rack_location, i.barcode,
-      i.reorder_level, i.reorder_qty, m.name as manufacturer_name
-    FROM items i
-    LEFT JOIN manufacturers m ON m.id = i.manufacturer_id
-    WHERE i.is_active = 1
-    ORDER BY i.name ASC
-  `);
-
-  const unitsRes = await db.execute(`SELECT item_id, unit_name, qty_in_base_unit FROM item_units WHERE is_default_sale = 1`);
-  const unitMap = new Map<string, { unitName: string; packSize: number }>();
-  for (const u of unitsRes.rows) {
-    unitMap.set(String(u.item_id), { unitName: String(u.unit_name), packSize: Number(u.qty_in_base_unit || 1) });
+  let itemsRes: any;
+  if (q) {
+    const cleanQ = q.replace(/^\d+\s*\*\s*/, '').trim();
+    itemsRes = await db.execute({
+      sql: `
+        SELECT
+          i.id, i.name, i.generic_name, i.category, i.drug_form, i.hsn_code,
+          i.gst_rate_bp, i.schedule, i.base_unit, i.rack_location, i.barcode,
+          i.reorder_level, i.reorder_qty, m.name as manufacturer_name
+        FROM items i
+        LEFT JOIN manufacturers m ON m.id = i.manufacturer_id
+        WHERE i.is_active = 1 AND (i.name LIKE ? OR i.generic_name LIKE ? OR i.barcode LIKE ?)
+        ORDER BY i.name ASC
+        LIMIT ? OFFSET ?
+      `,
+      args: [`%${cleanQ}%`, `%${cleanQ}%`, `%${cleanQ}%`, limit, offset],
+    });
+  } else {
+    itemsRes = await db.execute({
+      sql: `
+        SELECT
+          i.id, i.name, i.generic_name, i.category, i.drug_form, i.hsn_code,
+          i.gst_rate_bp, i.schedule, i.base_unit, i.rack_location, i.barcode,
+          i.reorder_level, i.reorder_qty, m.name as manufacturer_name
+        FROM items i
+        LEFT JOIN manufacturers m ON m.id = i.manufacturer_id
+        WHERE i.is_active = 1
+        ORDER BY i.name ASC
+        LIMIT ? OFFSET ?
+      `,
+      args: [limit, offset],
+    });
   }
 
-  const batchesRes = await db.execute(`
-    SELECT
-      b.id, b.item_id, b.batch_no, b.expiry_date, b.mrp_paise, b.ptr_paise,
-      v.current_qty_base
-    FROM batches b
-    JOIN v_batch_stock v ON v.batch_id = b.id
-    ORDER BY b.expiry_date ASC
-  `);
-
+  const itemIds = itemsRes.rows.map((r: any) => String(r.id));
+  const unitMap = new Map<string, { unitName: string; packSize: number }>();
   const itemBatchesMap = new Map<string, any[]>();
-  for (const b of batchesRes.rows) {
-    const list = itemBatchesMap.get(String(b.item_id)) || [];
-    list.push({
-      batchId: b.id,
-      batchNo: b.batch_no,
-      expiryDate: b.expiry_date,
-      daysLeft: daysUntilExpiry(String(b.expiry_date), todayIso),
-      mrpPaise: Number(b.mrp_paise),
-      ptrPaise: Number(b.ptr_paise),
-      stockBase: Number(b.current_qty_base || 0),
-    });
-    itemBatchesMap.set(String(b.item_id), list);
+
+  if (itemIds.length > 0) {
+    const placeholders = itemIds.map(() => '?').join(',');
+
+    const [unitsRes, batchesRes] = await Promise.all([
+      db.execute({
+        sql: `SELECT item_id, unit_name, qty_in_base_unit FROM item_units WHERE item_id IN (${placeholders}) AND is_default_sale = 1`,
+        args: itemIds,
+      }),
+      db.execute({
+        sql: `
+          SELECT
+            b.id, b.item_id, b.batch_no, b.expiry_date, b.mrp_paise, b.ptr_paise,
+            COALESCE(SUM(sm.qty_base_signed), 0) as current_qty_base
+          FROM batches b
+          LEFT JOIN stock_movements sm ON sm.batch_id = b.id
+          WHERE b.item_id IN (${placeholders})
+          GROUP BY b.id
+          ORDER BY b.expiry_date ASC
+        `,
+        args: itemIds,
+      }),
+    ]);
+
+    for (const u of unitsRes.rows) {
+      unitMap.set(String(u.item_id), { unitName: String(u.unit_name), packSize: Number(u.qty_in_base_unit || 1) });
+    }
+
+    for (const b of batchesRes.rows) {
+      const list = itemBatchesMap.get(String(b.item_id)) || [];
+      list.push({
+        batchId: b.id,
+        batchNo: b.batch_no,
+        expiryDate: b.expiry_date,
+        daysLeft: daysUntilExpiry(String(b.expiry_date), todayIso),
+        mrpPaise: Number(b.mrp_paise),
+        ptrPaise: Number(b.ptr_paise),
+        stockBase: Number(b.current_qty_base || 0),
+      });
+      itemBatchesMap.set(String(b.item_id), list);
+    }
   }
 
   let grandCostPaise = 0;
   let grandMrpPaise = 0;
 
-  const stockGrid = itemsRes.rows.map((row) => {
+  const stockGrid = itemsRes.rows.map((row: any) => {
     const id = String(row.id);
-    const u = unitMap.get(id) || { unitName: String(row.base_unit), packSize: 1 };
+    const u = unitMap.get(id) || { unitName: String(row.base_unit || 'TAB'), packSize: 1 };
     const batches = itemBatchesMap.get(id) || [];
     let itemStockBase = 0;
     let itemCostPaise = 0;
     let itemMrpPaise = 0;
     let nearestExp = '—';
 
-    const activeBatches = batches.filter((b) => b.stockBase > 0);
+    const activeBatches = batches.filter((b: any) => b.stockBase > 0);
     for (const b of activeBatches) {
       itemStockBase += b.stockBase;
       itemCostPaise += Math.round((b.ptrPaise / u.packSize) * b.stockBase);
@@ -1105,8 +1122,8 @@ export async function getInventoryStock() {
       hsnCode: String(row.hsn_code || '3004'),
       gstRateBp: Number(row.gst_rate_bp || 1200),
       rackLocation: String(row.rack_location || '—'),
-      schedule: String(row.schedule),
-      baseUnit: String(row.base_unit),
+      schedule: String(row.schedule || 'none'),
+      baseUnit: String(row.base_unit || 'TAB'),
       saleUnit: u.unitName,
       packSize: u.packSize,
       reorderLevel: Number(row.reorder_level || 20),

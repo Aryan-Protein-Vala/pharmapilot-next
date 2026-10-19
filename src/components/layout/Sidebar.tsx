@@ -137,11 +137,9 @@ export function Sidebar({ isPinned, onTogglePin, isHovered, setIsHovered }: Side
   useEffect(() => {
     fetchUserProfile();
     window.addEventListener("pharmapilot_settings_updated", fetchUserProfile);
-    window.addEventListener("focus", fetchUserProfile);
     return () => {
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
       window.removeEventListener("pharmapilot_settings_updated", fetchUserProfile);
-      window.removeEventListener("focus", fetchUserProfile);
     };
   }, []);
 

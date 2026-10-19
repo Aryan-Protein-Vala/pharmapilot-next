@@ -109,12 +109,10 @@ export function Topbar({
     };
 
     window.addEventListener("pharmapilot_settings_updated", handleSettingsUpdated);
-    window.addEventListener("focus", handleSettingsUpdated);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener("pharmapilot_settings_updated", handleSettingsUpdated);
-      window.removeEventListener("focus", handleSettingsUpdated);
     };
   }, [initialStoreName, initialDrugLicenseNo, initialGstin]);
 

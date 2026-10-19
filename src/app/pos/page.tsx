@@ -154,13 +154,16 @@ export default function PosBillingPage() {
     loadCatalog();
   }, []);
 
-  // 2. High-Scale Server-Side Debounced Search (150ms) for 3 Lakh Medicines
+  // 2. High-Scale Server-Side Debounced Search (80ms + AbortController) for 3 Lakh Medicines
   useEffect(() => {
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       const cleanTerm = searchQuery.replace(/^\d+\s*\*\s*/, "").trim();
       try {
         setIsSearching(true);
-        const res = await fetch(`/api/pos/search?q=${encodeURIComponent(cleanTerm)}&limit=25`);
+        const res = await fetch(`/api/pos/search?q=${encodeURIComponent(cleanTerm)}&limit=25`, {
+          signal: controller.signal,
+        });
         if (res.ok) {
           const data = await res.json();
           const items: CatalogItem[] = data.results || [];
@@ -177,14 +180,19 @@ export default function PosBillingPage() {
             setSelectedCatalogItem(items[0]);
           }
         }
-      } catch (err) {
-        console.error("Debounced POS search failed:", err);
+      } catch (err: any) {
+        if (err.name !== "AbortError") {
+          console.error("Debounced POS search failed:", err);
+        }
       } finally {
         setIsSearching(false);
       }
-    }, 150);
+    }, 80);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [searchQuery]);
 
   // 3. Hardware Barcode Scanner Wedge Listener (<35ms keystroke interval)

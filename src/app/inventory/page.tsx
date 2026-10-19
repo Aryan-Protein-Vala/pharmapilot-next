@@ -17,6 +17,7 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Edit2,
   BookOpen,
   Share2,
@@ -232,11 +233,19 @@ export default function InventoryPage() {
   const [sbNotes, setSbNotes] = useState("");
   const [submittingSb, setSubmittingSb] = useState(false);
 
+  // Pagination state (25 items per page)
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 25;
+
   // Fetch Inventory and Shortbook
-  const fetchInventory = async () => {
+  const fetchInventory = async (query = "", page = currentPage) => {
     try {
       setLoading(true);
-      const res = await fetch("/api/inventory");
+      const offset = (page - 1) * pageSize;
+      const url = query.trim()
+        ? `/api/inventory?q=${encodeURIComponent(query.trim())}&limit=${pageSize}&offset=${offset}`
+        : `/api/inventory?limit=${pageSize}&offset=${offset}`;
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setStockGrid(data.stockGrid || []);
@@ -266,7 +275,13 @@ export default function InventoryPage() {
   };
 
   useEffect(() => {
-    fetchInventory();
+    const timer = setTimeout(() => {
+      fetchInventory(searchQuery, currentPage);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [searchQuery, currentPage]);
+
+  useEffect(() => {
     fetchShortbook();
   }, []);
 
@@ -957,7 +972,10 @@ export default function InventoryPage() {
             type="text"
             placeholder="Search medicine, rack, barcode..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             className="w-full h-8 pl-8 pr-3 text-xs rounded-md border border-slate-200 dark:border-navy-700 bg-white dark:bg-navy-800 focus:outline-none focus:border-teal-500"
           />
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
@@ -1176,6 +1194,36 @@ export default function InventoryPage() {
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* 1-25 Page System Pagination Bar */}
+          <div className="px-4 py-3 border-t border-slate-200 dark:border-navy-700 bg-slate-50/50 dark:bg-navy-900/30 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <span className="text-slate-500 dark:text-slate-400">
+              Showing Page <span className="font-semibold text-navy-900 dark:text-slate-100">{currentPage}</span> ({stockGrid.length} medicines loaded)
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage <= 1 || loading}
+                className="px-3 py-1.5 rounded-md border border-slate-200 dark:border-navy-700 bg-white dark:bg-navy-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-navy-700 disabled:opacity-40 transition-colors font-medium shadow-xs flex items-center gap-1 cursor-pointer"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Previous</span>
+              </button>
+              <span className="px-3 py-1 font-mono font-semibold bg-white dark:bg-navy-800 border border-slate-200 dark:border-navy-700 rounded-md text-navy-900 dark:text-slate-100 shadow-xs">
+                Page {currentPage}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => p + 1)}
+                disabled={stockGrid.length < pageSize || loading}
+                className="px-3 py-1.5 rounded-md border border-slate-200 dark:border-navy-700 bg-white dark:bg-navy-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-navy-700 disabled:opacity-40 transition-colors font-medium shadow-xs flex items-center gap-1 cursor-pointer"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       )}
