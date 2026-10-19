@@ -3219,8 +3219,28 @@ export async function getPurchaseReturnsList(supplierId?: string) {
 // ----------------------------------------------------------------------------
 export async function getShopProfile() {
   const db = await ensureDbReady();
-  const shopRes = await db.execute(`SELECT * FROM shop_profile WHERE id = 1`);
-  const userRes = await db.execute(`SELECT id, name, username FROM users WHERE role_id = 'role_owner' OR id = 'user_admin' LIMIT 1`);
+  let shopRes = await db.execute(`SELECT * FROM shop_profile WHERE id = 1`);
+  if (!shopRes.rows[0]) {
+    await db.execute({
+      sql: `INSERT OR IGNORE INTO shop_profile (
+        id, name, address, phone, email, gstin,
+        drug_license_no_1, drug_license_no_2, pharmacist_name,
+        pharmacist_reg_no, state_code
+      ) VALUES (1, 'Apex Life Chemist & Druggist', 'Shop 4, Ground Floor, Commercial Complex, MG Road, Bengaluru 560001', '+91 98450 11223', 'contact@apexlifechemist.in', '29AABCU9603R1ZM', 'KA-B2-192842', 'KA-B3-192843', 'Vikas Sharma', 'KSPC-49201-A', '29')`,
+      args: [],
+    });
+    shopRes = await db.execute(`SELECT * FROM shop_profile WHERE id = 1`);
+  }
+
+  let userRes = await db.execute(`SELECT id, name, username FROM users WHERE role_id = 'role_owner' OR id = 'user_admin' LIMIT 1`);
+  if (!userRes.rows[0]) {
+    await db.execute({
+      sql: `INSERT OR IGNORE INTO users (id, name, username, pin_or_password_hash, role_id, active, created_at) VALUES ('user_admin', 'Admin Pharmacist', 'admin', 'admin123', 'role_owner', 1, ?)`,
+      args: [new Date().toISOString()],
+    });
+    userRes = await db.execute(`SELECT id, name, username FROM users WHERE role_id = 'role_owner' OR id = 'user_admin' LIMIT 1`);
+  }
+
   return {
     profile: shopRes.rows[0] || {
       id: 1,
@@ -3268,22 +3288,36 @@ export async function updateShopProfile(payload: {
   const stateCode = payload.stateCode !== undefined ? payload.stateCode.trim() : String(cur.state_code || '29');
 
   await db.execute({
-    sql: `UPDATE shop_profile SET
-      name = ?, address = ?, phone = ?, email = ?, gstin = ?,
-      drug_license_no_1 = ?, drug_license_no_2 = ?, pharmacist_name = ?,
-      pharmacist_reg_no = ?, state_code = ?
-      WHERE id = 1`,
+    sql: `INSERT INTO shop_profile (
+      id, name, address, phone, email, gstin,
+      drug_license_no_1, drug_license_no_2, pharmacist_name,
+      pharmacist_reg_no, state_code
+    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      address = excluded.address,
+      phone = excluded.phone,
+      email = excluded.email,
+      gstin = excluded.gstin,
+      drug_license_no_1 = excluded.drug_license_no_1,
+      drug_license_no_2 = excluded.drug_license_no_2,
+      pharmacist_name = excluded.pharmacist_name,
+      pharmacist_reg_no = excluded.pharmacist_reg_no,
+      state_code = excluded.state_code`,
     args: [name, address, phone, email, gstin, dl1, dl2, pName, pReg, stateCode],
   });
 
   if (payload.adminName && payload.adminName.trim()) {
+    const nowIso = new Date().toISOString();
     await db.execute({
-      sql: `UPDATE users SET name = ? WHERE id = 'user_admin' OR role_id = 'role_owner'`,
-      args: [payload.adminName.trim()],
+      sql: `INSERT INTO users (id, name, username, pin_or_password_hash, role_id, active, created_at)
+            VALUES ('user_admin', ?, 'admin', 'admin123', 'role_owner', 1, ?)
+            ON CONFLICT(id) DO UPDATE SET name = excluded.name`,
+      args: [payload.adminName.trim(), nowIso],
     });
   }
 
-  return { success: true, updated: { name, gstin, phone, address, dl1, dl2, pName, pReg } };
+  return { success: true, updated: { name, gstin, phone, address, dl1, dl2, pName, pReg, adminName: payload.adminName } };
 }
 
 // ----------------------------------------------------------------------------
