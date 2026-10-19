@@ -92,9 +92,13 @@ export async function runIngestion(options: IngestionOptions) {
   // Ensure DB and base schema exist
   console.log('\n[1/4] Verifying WAL mode & indexes...');
   await initDatabase(db);
-  await db.execute('PRAGMA synchronous = NORMAL;');
-  await db.execute('PRAGMA temp_store = MEMORY;');
-  await db.execute('PRAGMA cache_size = -64000;'); // 64MB cache
+  try {
+    await db.execute('PRAGMA synchronous = NORMAL;');
+    await db.execute('PRAGMA temp_store = MEMORY;');
+    await db.execute('PRAGMA cache_size = -64000;'); // 64MB cache
+  } catch {
+    // Cloud libSQL/Turso manages memory & replication automatically
+  }
 
   // Cache existing manufacturers to avoid repeated inserts
   console.log('[2/4] Pre-caching master entities...');
@@ -288,6 +292,25 @@ export async function runIngestion(options: IngestionOptions) {
 
     const rl = readline.createInterface({ input: inputStream, crlfDelay: Infinity });
 
+    function parseCsvLine(rawLine: string): string[] {
+      const result: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < rawLine.length; i++) {
+        const char = rawLine[i];
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    }
+
     let isHeader = true;
     let headerIndices: Record<string, number> = {};
 
@@ -295,13 +318,13 @@ export async function runIngestion(options: IngestionOptions) {
       if (!line.trim()) continue;
 
       if (isHeader) {
-        const headers = line.split(',').map((h) => h.trim().toLowerCase().replace(/[^a-z0-9_]/g, ''));
+        const headers = parseCsvLine(line).map((h) => h.trim().toLowerCase().replace(/[^a-z0-9_]/g, ''));
         headers.forEach((h, idx) => { headerIndices[h] = idx; });
         isHeader = false;
         continue;
       }
 
-      const cols = line.split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
+      const cols = parseCsvLine(line).map((c) => c.replace(/^"|"$/g, '').trim());
       const name = cols[
         headerIndices['name'] ??
         headerIndices['brand_name'] ??
@@ -310,18 +333,22 @@ export async function runIngestion(options: IngestionOptions) {
         0
       ] || 'Unknown Medicine';
 
-      const genericName = cols[
-        headerIndices['generic_name'] ??
-        headerIndices['composition'] ??
-        headerIndices['short_composition1'] ??
-        headerIndices['salt'] ??
-        headerIndices['salt_composition'] ??
-        1
-      ] || '';
+      const comp1 = cols[headerIndices['short_composition1'] ?? -1] || '';
+      const comp2 = cols[headerIndices['short_composition2'] ?? -1] || '';
+      let genericName = [comp1, comp2].filter(Boolean).join(' + ');
+      if (!genericName) {
+        genericName = cols[
+          headerIndices['generic_name'] ??
+          headerIndices['composition'] ??
+          headerIndices['salt'] ??
+          headerIndices['salt_composition'] ??
+          1
+        ] || '';
+      }
 
       const mfgName = cols[
-        headerIndices['manufacturer'] ??
         headerIndices['manufacturer_name'] ??
+        headerIndices['manufacturer'] ??
         headerIndices['mfg'] ??
         headerIndices['brand'] ??
         2
@@ -354,19 +381,47 @@ export async function runIngestion(options: IngestionOptions) {
       if (existingItemNames.has(uniqueKey)) continue;
       existingItemNames.add(uniqueKey);
 
+      const packLabel = (cols[headerIndices['pack_size_label'] ?? -1] || '').toLowerCase();
+      let drugForm = 'Tablet';
+      let baseUnit = 'TAB';
+      let saleUnit = 'STRIP';
+      let packSize = 10;
+
+      if (packLabel.includes('syrup') || packLabel.includes('suspension') || packLabel.includes('liquid') || packLabel.includes('solution') || name.toLowerCase().includes('syr')) {
+        drugForm = 'Syrup';
+        baseUnit = 'BOTTLE';
+        saleUnit = 'BOTTLE';
+        packSize = 1;
+      } else if (packLabel.includes('capsule') || name.toLowerCase().includes('cap')) {
+        drugForm = 'Capsule';
+        baseUnit = 'CAP';
+        saleUnit = 'STRIP';
+        packSize = 10;
+      } else if (packLabel.includes('injection') || name.toLowerCase().includes('inj')) {
+        drugForm = 'Injection';
+        baseUnit = 'VIAL';
+        saleUnit = 'VIAL';
+        packSize = 1;
+      }
+
+      const packNumMatch = packLabel.match(/(\d+)\s*(tablets?|capsules?|ml|pills?)/);
+      if (packNumMatch && packNumMatch[1]) {
+        packSize = parseInt(packNumMatch[1], 10) || packSize;
+      }
+
       addItemToBatch({
         id: `med_${totalInserted + 1}_${Date.now().toString(36)}`,
         name,
         genericName,
         mfgId,
         category: 'Medicine',
-        drugForm: name.toLowerCase().includes('cap') ? 'Capsule' : name.toLowerCase().includes('syr') ? 'Syrup' : 'Tablet',
+        drugForm,
         hsnCode: '3004',
         gstRateBp: 1200,
         schedule: name.toLowerCase().includes('alprax') || name.toLowerCase().includes('tramadol') ? 'H1' : 'none',
-        baseUnit: 'TAB',
-        saleUnit: 'STRIP',
-        packSize: 10,
+        baseUnit,
+        saleUnit,
+        packSize,
         rackLocation: 'RACK-A1',
         reorderLevel: 20,
         reorderQty: 100,
@@ -418,11 +473,11 @@ if (require.main === module) {
       const nextArg = args[i + 1];
       if (nextArg && !nextArg.startsWith('--')) {
         url = nextArg === 'default'
-          ? 'https://raw.githubusercontent.com/junioralive/Indian-Medicine-Dataset/main/dataset/medicines.csv'
+          ? 'https://raw.githubusercontent.com/junioralive/Indian-Medicine-Dataset/main/DATA/indian_medicine_data.csv'
           : nextArg;
         i++;
       } else {
-        url = 'https://raw.githubusercontent.com/junioralive/Indian-Medicine-Dataset/main/dataset/medicines.csv';
+        url = 'https://raw.githubusercontent.com/junioralive/Indian-Medicine-Dataset/main/DATA/indian_medicine_data.csv';
       }
     } else if (args[i] === '--limit' && args[i + 1]) {
       limit = parseInt(args[i + 1], 10);

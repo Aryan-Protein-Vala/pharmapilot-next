@@ -78,9 +78,6 @@ export const db: Client = new Proxy({} as Client, {
 
 export const SCHEMA_SQL = `
 -- PharmaPilot Complete Pharmacy ERP Schema Matching 0001_init.sql
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-PRAGMA busy_timeout = 5000;
 
 CREATE TABLE IF NOT EXISTS shop_profile (
     id INTEGER PRIMARY KEY CHECK (id = 1),
