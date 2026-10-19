@@ -19,33 +19,83 @@ export async function getDashboardMetrics() {
   const db = await ensureDbReady();
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  // Today's revenue & bills count
-  const salesTodayRes = await db.execute({
-    sql: `SELECT COUNT(*) as bill_count, COALESCE(SUM(total_paise), 0) as revenue_paise
-          FROM sales_invoices
-          WHERE invoice_date = ? AND status = 'posted'`,
-    args: [todayIso],
-  });
+  // Execute all independent KPI queries concurrently in parallel
+  const [
+    salesTodayRes,
+    allSalesRes,
+    partiesRes,
+    ledgerRes,
+    stockRows,
+    lowStockRes,
+    recentSalesRes,
+    schedCountRes,
+  ] = await Promise.all([
+    db.execute({
+      sql: `SELECT COUNT(*) as bill_count, COALESCE(SUM(total_paise), 0) as revenue_paise
+            FROM sales_invoices
+            WHERE invoice_date = ? AND status = 'posted'`,
+      args: [todayIso],
+    }),
+    db.execute(`
+      SELECT COUNT(*) as total_bills, COALESCE(SUM(total_paise), 0) as gross_sales_paise
+      FROM sales_invoices WHERE status = 'posted'
+    `),
+    db.execute(`
+      SELECT id, name, type, phone, opening_balance_paise, opening_balance_type
+      FROM parties WHERE is_active = 1
+    `),
+    db.execute(`
+      SELECT party_id, SUM(debit_paise) as total_debit, SUM(credit_paise) as total_credit
+      FROM ledger_entries GROUP BY party_id
+    `),
+    db.execute(`
+      SELECT
+        sm.batch_id,
+        b.item_id, b.batch_no, b.expiry_date, b.mrp_paise,
+        COALESCE(SUM(sm.qty_base_signed), 0) as current_qty_base,
+        i.name as item_name, i.schedule, i.base_unit, i.reorder_level
+      FROM stock_movements sm
+      JOIN batches b ON b.id = sm.batch_id
+      JOIN items i ON i.id = sm.item_id
+      GROUP BY sm.batch_id
+      HAVING current_qty_base > 0
+      ORDER BY b.expiry_date ASC
+      LIMIT 100
+    `),
+    db.execute(`
+      SELECT
+        sm.item_id,
+        i.name, i.base_unit, i.reorder_level, i.reorder_qty,
+        COALESCE(SUM(sm.qty_base_signed), 0) as current_stock
+      FROM stock_movements sm
+      JOIN items i ON i.id = sm.item_id
+      WHERE i.is_active = 1
+      GROUP BY sm.item_id
+      HAVING current_stock <= i.reorder_level
+      ORDER BY current_stock ASC
+      LIMIT 15
+    `),
+    db.execute(`
+      SELECT
+        s.id, s.invoice_no, s.invoice_date, s.patient_name, s.payment_mode,
+        s.subtotal_paise, s.cgst_paise, s.sgst_paise, s.igst_paise, s.total_paise,
+        d.name as doctor_name, d.reg_no as doctor_reg_no,
+        (SELECT COUNT(*) FROM sales_items WHERE sale_id = s.id) as item_count
+      FROM sales_invoices s
+      LEFT JOIN doctors d ON d.id = s.doctor_id
+      WHERE s.status = 'posted'
+      ORDER BY s.invoice_date DESC, s.created_at DESC
+      LIMIT 6
+    `),
+    db.execute(`SELECT COUNT(*) as count FROM schedule_register`),
+  ]);
+
   const todayBillCount = Number(salesTodayRes.rows[0]?.bill_count || 0);
   const todayRevenuePaise = Number(salesTodayRes.rows[0]?.revenue_paise || 0);
-
-  // Overall Total Sales
-  const allSalesRes = await db.execute(`
-    SELECT COUNT(*) as total_bills, COALESCE(SUM(total_paise), 0) as gross_sales_paise
-    FROM sales_invoices WHERE status = 'posted'
-  `);
   const grossSalesPaise = Number(allSalesRes.rows[0]?.gross_sales_paise || 0);
   const totalBillsCount = Number(allSalesRes.rows[0]?.total_bills || 0);
 
-  // Outstanding Customer Receivables
-  const partiesRes = await db.execute(`
-    SELECT id, name, type, phone, opening_balance_paise, opening_balance_type
-    FROM parties WHERE is_active = 1
-  `);
-  const ledgerRes = await db.execute(`
-    SELECT party_id, SUM(debit_paise) as total_debit, SUM(credit_paise) as total_credit
-    FROM ledger_entries GROUP BY party_id
-  `);
+  // Compute Outstanding Customer Receivables
   const ledgerMap = new Map<string, { debit: number; credit: number }>();
   for (const row of ledgerRes.rows) {
     ledgerMap.set(String(row.party_id), {
@@ -65,19 +115,9 @@ export async function getDashboardMetrics() {
   }
 
   // Stock & Expiry Watch
-  const stockRows = await db.execute(`
-    SELECT
-      v.batch_id, v.item_id, v.batch_no, v.expiry_date, v.mrp_paise, v.current_qty_base,
-      i.name as item_name, i.schedule, i.base_unit, i.reorder_level
-    FROM v_batch_stock v
-    JOIN items i ON i.id = v.item_id
-    WHERE v.current_qty_base > 0
-  `);
-
   let nearExpiryCount = 0;
   let expiredCount = 0;
   const criticalExpiryList: any[] = [];
-  const itemStockMap = new Map<string, { name: string; current: number; reorder: number; baseUnit: string }>();
 
   for (const row of stockRows.rows) {
     const expDate = String(row.expiry_date);
@@ -98,54 +138,24 @@ export async function getDashboardMetrics() {
         schedule: `Schedule ${row.schedule}`,
       });
     }
-
-    const itmId = String(row.item_id);
-    const existing = itemStockMap.get(itmId) || {
-      name: String(row.item_name),
-      current: 0,
-      reorder: Number(row.reorder_level || 20),
-      baseUnit: String(row.base_unit),
-    };
-    existing.current += qty;
-    itemStockMap.set(itmId, existing);
   }
 
-  let lowStockReordersCount = 0;
+  // Low Stock Items (bounded)
+  let lowStockReordersCount = lowStockRes.rows.length;
   const lowStockItems: any[] = [];
-  const allItemsRes = await db.execute(`SELECT id, name, base_unit, reorder_level, reorder_qty FROM items WHERE is_active = 1`);
-  for (const itm of allItemsRes.rows) {
-    const id = String(itm.id);
-    const st = itemStockMap.get(id)?.current || 0;
-    const reorder = Number(itm.reorder_level || 20);
-    if (st <= reorder) {
-      lowStockReordersCount++;
-      lowStockItems.push({
-        id,
-        name: itm.name,
-        currentStock: st,
-        reorderLevel: reorder,
-        suggestedOrder: Math.max((Number(itm.reorder_qty) || 100) - st, 20),
-        baseUnit: itm.base_unit,
-      });
-    }
+  for (const row of lowStockRes.rows) {
+    const st = Number(row.current_stock || 0);
+    const reorder = Number(row.reorder_level || 20);
+    lowStockItems.push({
+      id: String(row.item_id),
+      name: String(row.name),
+      currentStock: st,
+      reorderLevel: reorder,
+      suggestedOrder: Math.max((Number(row.reorder_qty) || 100) - st, 20),
+      baseUnit: String(row.base_unit),
+    });
   }
 
-  // Recent sales bills
-  const recentSalesRes = await db.execute(`
-    SELECT
-      s.id, s.invoice_no, s.invoice_date, s.patient_name, s.payment_mode,
-      s.subtotal_paise, s.cgst_paise, s.sgst_paise, s.igst_paise, s.total_paise,
-      d.name as doctor_name, d.reg_no as doctor_reg_no,
-      (SELECT COUNT(*) FROM sales_items WHERE sale_id = s.id) as item_count
-    FROM sales_invoices s
-    LEFT JOIN doctors d ON d.id = s.doctor_id
-    WHERE s.status = 'posted'
-    ORDER BY s.invoice_date DESC, s.created_at DESC
-    LIMIT 6
-  `);
-
-  // Schedule Log count
-  const schedCountRes = await db.execute(`SELECT COUNT(*) as count FROM schedule_register`);
   const scheduleCount = Number(schedCountRes.rows[0]?.count || 0);
 
   return {
@@ -1514,10 +1524,11 @@ export interface UpdateBatchDetailsPayload {
 export async function updateBatchDetails(batchId: string, payload: UpdateBatchDetailsPayload) {
   const db = await ensureDbReady();
   const bRes = await db.execute({
-    sql: `SELECT b.*, COALESCE(v.current_qty_base, 0) as current_qty_base
+    sql: `SELECT b.*, COALESCE(SUM(sm.qty_base_signed), 0) as current_qty_base
           FROM batches b
-          LEFT JOIN v_batch_stock v ON v.batch_id = b.id
-          WHERE b.id = ?`,
+          LEFT JOIN stock_movements sm ON sm.batch_id = b.id
+          WHERE b.id = ?
+          GROUP BY b.id`,
     args: [batchId],
   });
   const b = bRes.rows[0];
@@ -1594,16 +1605,16 @@ export async function getShortbookItems() {
     LEFT JOIN parties p ON p.id = s.distributor_id
     LEFT JOIN item_units u ON u.item_id = s.item_id AND u.is_default_sale = 1
     LEFT JOIN (
-      SELECT item_id, SUM(current_qty_base) as current_stock_base
-      FROM v_batch_stock GROUP BY item_id
+      SELECT item_id, COALESCE(SUM(qty_base_signed), 0) as current_stock_base
+      FROM stock_movements GROUP BY item_id
     ) v ON v.item_id = s.item_id
     ORDER BY s.created_at DESC
   `);
 
-  // 2. Auto low stock & out of stock items from catalog (current_stock_base <= reorder_level)
+  // 2. Auto low stock & out of stock items from active pharmacy inventory (bounded)
   const lowStockRes = await db.execute(`
     SELECT
-      i.id as item_id,
+      sm.item_id,
       i.name as item_name,
       i.generic_name,
       i.base_unit,
@@ -1613,15 +1624,16 @@ export async function getShortbookItems() {
       m.name as manufacturer_name,
       u.unit_name as sale_unit,
       COALESCE(u.qty_in_base_unit, 1) as pack_size,
-      COALESCE(SUM(v.current_qty_base), 0) as current_stock_base
-    FROM items i
-    LEFT JOIN v_batch_stock v ON v.item_id = i.id
+      COALESCE(SUM(sm.qty_base_signed), 0) as current_stock_base
+    FROM stock_movements sm
+    JOIN items i ON i.id = sm.item_id
     LEFT JOIN manufacturers m ON m.id = i.manufacturer_id
     LEFT JOIN item_units u ON u.item_id = i.id AND u.is_default_sale = 1
     WHERE i.is_active = 1
-    GROUP BY i.id
+    GROUP BY sm.item_id
     HAVING current_stock_base <= i.reorder_level
     ORDER BY current_stock_base ASC, i.name ASC
+    LIMIT 50
   `);
 
   // Active distributors list for dropdown
@@ -1752,12 +1764,51 @@ export async function updateShortbookStatus(id: string, status: 'pending' | 'ord
 // ----------------------------------------------------------------------------
 export async function getPurchasesCatalog() {
   const db = await ensureDbReady();
-  const suppliersRes = await db.execute(`SELECT id, name, gstin, state_code, phone FROM parties WHERE type IN ('supplier','both') AND is_active = 1 ORDER BY name ASC`);
-  const itemsRes = await db.execute(`SELECT id, name, generic_name, base_unit, gst_rate_bp FROM items WHERE is_active = 1 ORDER BY name ASC`);
-  const unitsRes = await db.execute(`SELECT item_id, unit_name, qty_in_base_unit FROM item_units WHERE is_default_sale = 1`);
+
+  const [suppliersRes, itemsRes, recentPurchasesRes, batchesRes] = await Promise.all([
+    db.execute(`SELECT id, name, gstin, state_code, phone FROM parties WHERE type IN ('supplier','both') AND is_active = 1 ORDER BY name ASC`),
+    db.execute(`SELECT id, name, generic_name, base_unit, gst_rate_bp FROM items WHERE is_active = 1 ORDER BY name ASC LIMIT 50`),
+    db.execute(`
+      SELECT
+        p.id, p.supplier_invoice_no, p.invoice_date, p.entry_no, p.subtotal_paise,
+        p.cgst_paise, p.sgst_paise, p.igst_paise, p.total_paise, p.payment_mode,
+        s.name as supplier_name,
+        (SELECT COUNT(*) FROM purchase_items WHERE purchase_id = p.id) as item_count
+      FROM purchase_invoices p
+      JOIN parties s ON s.id = p.supplier_id
+      WHERE p.status = 'posted'
+      ORDER BY p.invoice_date DESC, p.created_at DESC
+      LIMIT 15
+    `),
+    db.execute(`
+      SELECT
+        sm.batch_id,
+        b.item_id, b.batch_no, b.expiry_date, b.mrp_paise,
+        b.ptr_paise, b.purchase_rate_paise,
+        COALESCE(SUM(sm.qty_base_signed), 0) as current_qty_base,
+        i.name as item_name, i.gst_rate_bp
+      FROM stock_movements sm
+      JOIN batches b ON b.id = sm.batch_id
+      JOIN items i ON i.id = sm.item_id
+      GROUP BY sm.batch_id
+      HAVING current_qty_base > 0
+      ORDER BY b.expiry_date ASC, i.name ASC
+      LIMIT 50
+    `),
+  ]);
+
+  const itemIds = itemsRes.rows.map((i) => String(i.id));
   const unitMap = new Map<string, { unitName: string; packSize: number }>();
-  for (const u of unitsRes.rows) {
-    unitMap.set(String(u.item_id), { unitName: String(u.unit_name), packSize: Number(u.qty_in_base_unit || 1) });
+
+  if (itemIds.length > 0) {
+    const placeholders = itemIds.map(() => '?').join(',');
+    const unitsRes = await db.execute({
+      sql: `SELECT item_id, unit_name, qty_in_base_unit FROM item_units WHERE item_id IN (${placeholders}) AND is_default_sale = 1`,
+      args: itemIds,
+    });
+    for (const u of unitsRes.rows) {
+      unitMap.set(String(u.item_id), { unitName: String(u.unit_name), packSize: Number(u.qty_in_base_unit || 1) });
+    }
   }
 
   const itemsWithUnits = itemsRes.rows.map((i) => {
@@ -1773,30 +1824,6 @@ export async function getPurchasesCatalog() {
       gstRateBp: Number(i.gst_rate_bp || 1200),
     };
   });
-
-  const recentPurchasesRes = await db.execute(`
-    SELECT
-      p.id, p.supplier_invoice_no, p.invoice_date, p.entry_no, p.subtotal_paise,
-      p.cgst_paise, p.sgst_paise, p.igst_paise, p.total_paise, p.payment_mode,
-      s.name as supplier_name,
-      (SELECT COUNT(*) FROM purchase_items WHERE purchase_id = p.id) as item_count
-    FROM purchase_invoices p
-    JOIN parties s ON s.id = p.supplier_id
-    WHERE p.status = 'posted'
-    ORDER BY p.invoice_date DESC, p.created_at DESC
-    LIMIT 15
-  `);
-
-  const batchesRes = await db.execute(`
-    SELECT
-      v.batch_id, v.item_id, v.batch_no, v.expiry_date, v.mrp_paise,
-      v.ptr_paise, v.purchase_rate_paise, v.current_qty_base,
-      i.name as item_name, i.gst_rate_bp
-    FROM v_batch_stock v
-    JOIN items i ON i.id = v.item_id
-    WHERE v.current_qty_base > 0
-    ORDER BY v.expiry_date ASC, i.name ASC
-  `);
 
   return {
     suppliers: suppliersRes.rows,

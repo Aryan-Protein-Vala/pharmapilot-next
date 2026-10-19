@@ -135,6 +135,12 @@ export default function PurchasesPage() {
   const [selectedItemId, setSelectedItemId] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Alphanumeric Search for 2.5L+ Medicine Master Catalog
+  const [medSearchQuery, setMedSearchQuery] = useState("");
+  const [medSearchResults, setMedSearchResults] = useState<any[]>([]);
+  const [isSearchingMed, setIsSearchingMed] = useState(false);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+
   // Purchase Returns (Debit Notes) State
   const [returnsList, setReturnsList] = useState<PurchaseReturnRecord[]>([]);
   const [loadingReturns, setLoadingReturns] = useState(false);
@@ -208,9 +214,63 @@ export default function PurchasesPage() {
     fetchReturnsData();
   }, []);
 
-  const addLine = (itemIdToAdd?: string) => {
-    const id = itemIdToAdd || selectedItemId || items[0]?.id;
-    const itm = items.find((i) => i.id === id);
+  useEffect(() => {
+    if (!medSearchQuery.trim()) {
+      setMedSearchResults([]);
+      setIsSearchingMed(false);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        setIsSearchingMed(true);
+        const res = await fetch(`/api/pos/search?q=${encodeURIComponent(medSearchQuery.trim())}&limit=15`, {
+          signal: controller.signal,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setMedSearchResults(data.results || data.items || []);
+        }
+      } catch (err: any) {
+        if (err.name !== "AbortError") console.error(err);
+      } finally {
+        setIsSearchingMed(false);
+      }
+    }, 80);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [medSearchQuery]);
+
+  const handleSelectSearchedItem = (item: any) => {
+    const itemOption: ItemOption = {
+      id: String(item.id),
+      name: String(item.name),
+      genericName: String(item.genericName || ""),
+      baseUnit: String(item.baseUnit || "TAB"),
+      saleUnit: String(item.saleUnit || item.baseUnit || "STRIP"),
+      packSize: Number(item.packSize || 1),
+      gstRateBp: Number(item.gstRateBp || 1200),
+    };
+    setItems((prev) => {
+      if (prev.some((i) => i.id === itemOption.id)) return prev;
+      return [...prev, itemOption];
+    });
+    addLine(itemOption);
+    setMedSearchQuery("");
+    setShowSearchDropdown(false);
+  };
+
+  const addLine = (itemOrIdToAdd?: string | ItemOption) => {
+    let itm: ItemOption | undefined;
+    if (typeof itemOrIdToAdd === "object" && itemOrIdToAdd) {
+      itm = itemOrIdToAdd;
+    } else {
+      const id = (typeof itemOrIdToAdd === "string" ? itemOrIdToAdd : selectedItemId) || items[0]?.id;
+      itm = items.find((i) => i.id === id);
+    }
     if (!itm) return;
 
     const newLine: PurchaseLine = {
@@ -580,17 +640,61 @@ export default function PurchasesPage() {
           </div>
 
           {/* Quick Line Adder */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-lg bg-white dark:bg-navy-800 border border-slate-200 dark:border-navy-700 shadow-sm">
-            <div className="flex-1 flex items-center gap-2">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 p-3 rounded-lg bg-white dark:bg-navy-800 border border-slate-200 dark:border-navy-700 shadow-sm relative">
+            <div className="flex-1 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              {/* Alphanumeric Instant Search Input for 2.5 Lakh Medicine Master */}
+              <div className="relative flex-1 min-w-[220px]">
+                <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search 2.5L+ medicines (e.g. Dolo, Augmentin)..."
+                  value={medSearchQuery}
+                  onChange={(e) => {
+                    setMedSearchQuery(e.target.value);
+                    setShowSearchDropdown(true);
+                  }}
+                  onFocus={() => {
+                    if (medSearchQuery.trim()) setShowSearchDropdown(true);
+                  }}
+                  className="w-full h-8 pl-8 pr-2 rounded-md border border-slate-200 dark:border-navy-700 bg-slate-50 dark:bg-navy-900 text-xs font-medium placeholder:text-slate-400 focus:outline-none focus:border-teal-500"
+                />
+                {showSearchDropdown && medSearchResults.length > 0 && (
+                  <div className="absolute left-0 top-full mt-1 w-full max-h-64 overflow-y-auto bg-white dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-md shadow-xl z-50 divide-y divide-slate-100 dark:divide-navy-800">
+                    {medSearchResults.map((item) => (
+                      <div
+                        key={item.id}
+                        onClick={() => handleSelectSearchedItem(item)}
+                        className="p-2.5 hover:bg-slate-50 dark:hover:bg-navy-800 cursor-pointer flex flex-col text-left transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-navy-900 dark:text-slate-100">{item.name}</span>
+                          <span className="text-[10px] text-teal-600 dark:text-teal-400 font-medium">
+                            {item.packSize} {item.baseUnit}
+                          </span>
+                        </div>
+                        {item.genericName && (
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                            {item.genericName}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <span className="text-[11px] text-slate-400 font-medium hidden sm:inline px-1">or</span>
+
+              {/* Fast Select of Top Medicines */}
               <select
                 value={selectedItemId}
                 onChange={(e) => setSelectedItemId(e.target.value)}
-                className="h-8 px-2 rounded-md border border-slate-200 dark:border-navy-700 bg-slate-50 dark:bg-navy-900 text-xs font-semibold flex-1 max-w-md focus:outline-none focus:border-teal-500"
+                className="h-8 px-2 rounded-md border border-slate-200 dark:border-navy-700 bg-slate-50 dark:bg-navy-900 text-xs font-semibold max-w-xs focus:outline-none focus:border-teal-500"
               >
-                <option value="">Select Indian Medicine Formulation to Inward...</option>
+                <option value="">Select formulation...</option>
                 {items.map((i) => (
                   <option key={i.id} value={i.id}>
-                    {i.name} ({i.genericName}) — {i.packSize} {i.baseUnit}
+                    {i.name} ({i.packSize} {i.baseUnit})
                   </option>
                 ))}
               </select>
@@ -598,17 +702,18 @@ export default function PurchasesPage() {
               <button
                 type="button"
                 onClick={() => addLine()}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md bg-teal-600 hover:bg-teal-700 text-white shadow-xs transition-colors"
+                disabled={!selectedItemId && items.length === 0}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md bg-teal-600 hover:bg-teal-700 text-white shadow-xs transition-colors shrink-0 disabled:opacity-50"
               >
                 <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>Add Item Line</span>
+                <span>Add Line</span>
               </button>
             </div>
 
             <button
               onClick={handleSubmitInward}
               disabled={submitting || lines.length === 0}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-md bg-teal-600 hover:bg-teal-700 text-white shadow-sm transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-md bg-teal-600 hover:bg-teal-700 text-white shadow-sm transition-colors disabled:opacity-50 shrink-0"
             >
               <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
               <span>Post Inward Invoice</span>
